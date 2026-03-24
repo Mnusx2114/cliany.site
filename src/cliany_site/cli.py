@@ -24,8 +24,10 @@ def cli(ctx, json_mode):
 
 
 from cliany_site.commands.doctor import doctor
+from cliany_site.commands.login import login
 
 cli.add_command(doctor)
+cli.add_command(login)
 
 
 if __name__ == "__main__":
