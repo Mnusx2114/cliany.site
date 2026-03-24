@@ -49,6 +49,19 @@ def cli():
     pass
 
 
+def _resolve_json_mode(local_json_mode):
+    if local_json_mode is not None:
+        return bool(local_json_mode)
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return False
+    root_ctx = ctx.find_root()
+    obj = getattr(root_ctx, "obj", None)
+    if not isinstance(obj, dict):
+        return False
+    return bool(obj.get("json_mode", False))
+
+
 {commands_text}
 
 
@@ -97,12 +110,17 @@ if __name__ == "__main__":
         arg_decorators, arg_parameters = self._render_argument_decorators(command.args)
         decorator_lines = [
             f'@cli.command("{command_name}")',
-            '@click.option("--json", "json_mode", is_flag=True, default=True, help="JSON 输出")',
+            '@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")',
+            "@click.pass_context",
             *arg_decorators,
         ]
         decorators_text = "\n".join(decorator_lines)
 
-        function_args = ["json_mode", *arg_parameters]
+        function_args = [
+            "ctx: click.Context",
+            "json_mode: bool | None",
+            *arg_parameters,
+        ]
         function_signature = ", ".join(function_args)
         args_payload = self._render_args_payload(arg_parameters)
         action_lines = self._render_action_comment_lines(
@@ -131,13 +149,14 @@ def {function_name}({function_signature}):
         finally:
             await cdp.disconnect()
     result = asyncio.run(_run())
-    print_response(result, json_mode)
+    print_response(result, _resolve_json_mode(json_mode))
 '''
 
     def _render_empty_command_block(self) -> str:
         return '''@cli.command("run-workflow")
-@click.option("--json", "json_mode", is_flag=True, default=True, help="JSON 输出")
-def run_workflow(json_mode):
+@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")
+@click.pass_context
+def run_workflow(ctx: click.Context, json_mode: bool | None):
     """执行默认工作流"""
     async def _run():
         cdp = CDPConnection()
@@ -158,7 +177,7 @@ def run_workflow(json_mode):
         finally:
             await cdp.disconnect()
     result = asyncio.run(_run())
-    print_response(result, json_mode)
+    print_response(result, _resolve_json_mode(json_mode))
 '''
 
     def _render_argument_decorators(
@@ -166,7 +185,7 @@ def run_workflow(json_mode):
     ) -> tuple[list[str], list[str]]:
         decorators: list[str] = []
         parameters: list[str] = []
-        used_names = {"json_mode"}
+        used_names = {"json_mode", "ctx"}
 
         for index, arg in enumerate(args or []):
             if not isinstance(arg, dict):

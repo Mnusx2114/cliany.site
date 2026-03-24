@@ -7,9 +7,16 @@ from cliany_site.response import print_response, success_response
 @click.option(
     "--detail", is_flag=True, default=False, help="显示每个 adapter 的命令详情"
 )
-@click.option("--json", "json_mode", is_flag=True, default=False, help="JSON 输出")
-def list_cmd(detail, json_mode):
+@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")
+@click.pass_context
+def list_cmd(ctx: click.Context, detail: bool, json_mode: bool | None):
     """列出所有已生成的 CLI adapter"""
+    root_ctx = ctx.find_root()
+    root_obj = root_ctx.obj if isinstance(root_ctx.obj, dict) else {}
+    effective_json_mode = (
+        json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
+    )
+
     adapters_raw = discover_adapters()
 
     adapters_data = []
@@ -34,7 +41,7 @@ def list_cmd(detail, json_mode):
 
     result = success_response({"adapters": adapters_data, "message": message})
 
-    if not json_mode:
+    if not effective_json_mode:
         from rich.console import Console
         from rich.table import Table
 
@@ -57,4 +64,4 @@ def list_cmd(detail, json_mode):
             console.print(table)
         return
 
-    print_response(result, json_mode)
+    print_response(result, effective_json_mode)

@@ -1,5 +1,4 @@
 import json
-from typing import Any
 
 
 def success_response(data: dict) -> dict:
@@ -14,7 +13,11 @@ def error_response(code: str, message: str, fix: str | None = None) -> dict:
     }
 
 
-def print_response(response: dict, json_mode: bool = True) -> None:
+def print_response(
+    response: dict,
+    json_mode: bool = True,
+    exit_on_error: bool = True,
+) -> None:
     if json_mode:
         print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
@@ -31,3 +34,6 @@ def print_response(response: dict, json_mode: bool = True) -> None:
             )
             if err.get("fix"):
                 console.print(f"[yellow]Fix:[/yellow] {err.get('fix')}")
+
+    if exit_on_error and not response.get("success", False):
+        raise SystemExit(1)
