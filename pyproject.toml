@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cliany-site"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["browser-use", "click", "rich"]
+
+[project.scripts]
+cliany-site = "cliany_site.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cliany_site"]
