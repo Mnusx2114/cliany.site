@@ -23,5 +23,10 @@ def cli(ctx, json_mode):
         click.echo(ctx.get_help())
 
 
+from cliany_site.commands.doctor import doctor
+
+cli.add_command(doctor)
+
+
 if __name__ == "__main__":
     cli()
