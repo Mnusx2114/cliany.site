@@ -18,23 +18,16 @@ MAX_STEPS = 10
 
 
 def _get_llm():
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        try:
-            chat_anthropic = importlib.import_module("langchain_anthropic")
-            ChatAnthropic = getattr(chat_anthropic, "ChatAnthropic")
-            return ChatAnthropic(model="claude-3-5-haiku-20241022", temperature=0)
-        except ImportError:
-            pass
-    if os.environ.get("OPENAI_API_KEY"):
-        try:
-            chat_openai = importlib.import_module("langchain_openai")
-            ChatOpenAI = getattr(chat_openai, "ChatOpenAI")
-            return ChatOpenAI(model="gpt-4o-mini", temperature=0)
-        except ImportError:
-            pass
-    raise EnvironmentError(
-        "未找到 LLM API key，请设置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY"
-    )
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise EnvironmentError("请设置 ANTHROPIC_API_KEY 环境变量")
+    try:
+        chat_anthropic = importlib.import_module("langchain_anthropic")
+        ChatAnthropic = getattr(chat_anthropic, "ChatAnthropic")
+        return ChatAnthropic(model="claude-3-5-haiku-20241022", temperature=0)
+    except ImportError:
+        raise EnvironmentError(
+            "请安装 langchain-anthropic: pip install langchain-anthropic"
+        )
 
 
 def _parse_llm_response(text: str) -> dict:
