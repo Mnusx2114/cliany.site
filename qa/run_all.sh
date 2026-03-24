@@ -1,0 +1,34 @@
+#!/bin/bash
+# 串行执行所有 QA 脚本并汇总结果
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOTAL_PASS=0; TOTAL_FAIL=0
+
+run_script() {
+  local script="$1"
+  local name="$(basename "$script")"
+  echo ""
+  echo "========================================"
+  echo "运行: $name"
+  echo "========================================"
+  bash "$script"
+  local exit_code=$?
+  if [ $exit_code -eq 0 ]; then
+    echo "[SUITE PASS] $name"
+    TOTAL_PASS=$((TOTAL_PASS+1))
+  else
+    echo "[SUITE FAIL] $name (exit $exit_code)"
+    TOTAL_FAIL=$((TOTAL_FAIL+1))
+  fi
+}
+
+run_script "$SCRIPT_DIR/doctor_check.sh"
+run_script "$SCRIPT_DIR/test_errors.sh"
+run_script "$SCRIPT_DIR/test_commands.sh"
+run_script "$SCRIPT_DIR/test_explore.sh"
+
+echo ""
+echo "========================================"
+echo "=== 总计汇总 ==="
+echo "PASS: $TOTAL_PASS, FAIL: $TOTAL_FAIL"
+echo "========================================"
+[ $TOTAL_FAIL -eq 0 ] && exit 0 || exit 1
