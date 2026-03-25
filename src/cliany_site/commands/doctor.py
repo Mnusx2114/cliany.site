@@ -1,11 +1,20 @@
 # src/cliany_site/commands/doctor.py
 import asyncio
 import os
+import sys
 from pathlib import Path
 
 import click
 
 from cliany_site.response import success_response, error_response, print_response
+
+# 确保加载 .env 配置文件（在任何检查之前）
+try:
+    from cliany_site.explorer.engine import _load_dotenv
+
+    _load_dotenv()
+except ImportError:
+    pass
 
 
 @click.command("doctor")
@@ -33,8 +42,12 @@ async def _run_checks() -> dict:
     except Exception:
         checks["cdp"] = "fail"
 
+    # 支持新旧环境变量名
     has_llm = bool(
-        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        os.environ.get("CLIANY_ANTHROPIC_API_KEY")
+        or os.environ.get("CLIANY_OPENAI_API_KEY")
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
     )
     checks["llm"] = "ok" if has_llm else "fail"
 
