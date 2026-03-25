@@ -421,7 +421,12 @@ def run_workflow(ctx: click.Context, json_mode: bool | None):
         return self._sanitize_inline_text(value).replace('"""', '\\"\\"\\"')
 
 
-def save_adapter(domain: str, code: str, metadata: dict | None = None) -> str:
+def save_adapter(
+    domain: str,
+    code: str,
+    metadata: dict | None = None,
+    explore_result: ExploreResult | None = None,
+) -> str:
     """保存 adapter 到 ~/.cliany-site/adapters/<domain>/"""
     adapter_dir = Path.home() / ".cliany-site" / "adapters" / _safe_domain(domain)
     adapter_dir.mkdir(parents=True, exist_ok=True)
@@ -441,10 +446,43 @@ def save_adapter(domain: str, code: str, metadata: dict | None = None) -> str:
     if metadata:
         base_metadata.update(metadata)
 
-    commands = base_metadata.get("commands")
-    if not isinstance(commands, list):
-        commands = []
-    base_metadata["commands"] = [str(item) for item in commands]
+    if explore_result:
+        command_defs: list[dict[str, Any]] = []
+        for cmd in explore_result.commands:
+            cmd_actions: list[dict[str, Any]] = []
+            for step_idx in cmd.action_steps or []:
+                if 0 <= step_idx < len(explore_result.actions):
+                    action = explore_result.actions[step_idx]
+                    cmd_actions.append(
+                        {
+                            "action_type": action.action_type,
+                            "page_url": action.page_url,
+                            "target_ref": action.target_ref,
+                            "target_url": action.target_url,
+                            "value": action.value,
+                            "description": action.description,
+                            "target_name": action.target_name,
+                            "target_role": action.target_role,
+                            "target_attributes": action.target_attributes,
+                        }
+                    )
+
+            command_defs.append(
+                {
+                    "name": cmd.name,
+                    "description": cmd.description,
+                    "args": cmd.args,
+                    "action_steps": cmd.action_steps,
+                    "actions": cmd_actions,
+                }
+            )
+
+        base_metadata["commands"] = command_defs
+    else:
+        commands = base_metadata.get("commands")
+        if not isinstance(commands, list):
+            commands = []
+        base_metadata["commands"] = [str(item) for item in commands]
 
     if "domain" not in base_metadata or not base_metadata["domain"]:
         base_metadata["domain"] = domain

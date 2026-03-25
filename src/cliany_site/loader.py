@@ -59,6 +59,8 @@ def load_adapter(domain: str) -> click.Group | None:
     module_name = f"cliany_site_adapters.{domain.replace('.', '_').replace('-', '_')}"
 
     try:
+        # Force fresh load by removing stale cached module
+        sys.modules.pop(module_name, None)
         spec = importlib.util.spec_from_file_location(module_name, commands_py)
         if spec is None or spec.loader is None:
             return None

@@ -35,6 +35,7 @@ def explore_cmd(
     async def _run():
         from cliany_site.browser.cdp import CDPConnection
         from cliany_site.codegen.generator import AdapterGenerator, save_adapter
+        from cliany_site.codegen.merger import AdapterMerger
         from cliany_site.explorer.engine import (
             WorkflowExplorer,
             _load_dotenv,
@@ -93,22 +94,6 @@ def explore_cmd(
         parsed = urlparse(url)
         domain = parsed.netloc or parsed.path
 
-        adapter_dir = Path.home() / ".cliany-site" / "adapters" / domain
-        if adapter_dir.exists() and not force:
-            if not effective_json_mode:
-                from rich.console import Console
-
-                console = Console(stderr=True)
-                console.print(f"[yellow]已存在 adapter: {domain}[/yellow]")
-                if not click.confirm("是否覆盖？", default=False):
-                    return success_response(
-                        {
-                            "status": "skipped",
-                            "domain": domain,
-                            "message": "用户取消覆盖",
-                        }
-                    )
-
         if not effective_json_mode:
             from rich.console import Console
 
@@ -130,27 +115,52 @@ def explore_cmd(
         print(
             f"[explore] 发现 {len(explore_result.commands)} 个命令建议", file=sys.stderr
         )
-        gen = AdapterGenerator()
-        code = gen.generate(explore_result, domain)
 
-        metadata = {
-            "source_url": url,
-            "workflow": workflow_description,
-        }
-        adapter_path = save_adapter(domain, code, metadata)
+        adapter_dir = Path.home() / ".cliany-site" / "adapters" / domain
 
-        commands_list = [cmd.name for cmd in explore_result.commands]
-        print(f"[explore] Adapter 已生成: {adapter_path}", file=sys.stderr)
-
-        return success_response(
-            {
+        if force or not adapter_dir.exists():
+            gen = AdapterGenerator()
+            code = gen.generate(explore_result, domain)
+            metadata = {
+                "source_url": url,
+                "workflow": workflow_description,
+            }
+            adapter_path = save_adapter(
+                domain, code, metadata, explore_result=explore_result
+            )
+            commands_list = [cmd.name for cmd in explore_result.commands]
+            print(f"[explore] Adapter 已生成: {adapter_path}", file=sys.stderr)
+            return success_response(
+                {
+                    "domain": domain,
+                    "adapter_path": adapter_path,
+                    "adapter_mode": "created",
+                    "commands": commands_list,
+                    "commands_added": len(commands_list),
+                    "commands_total": len(commands_list),
+                    "pages_explored": len(explore_result.pages),
+                    "actions_found": len(explore_result.actions),
+                }
+            )
+        else:
+            merger = AdapterMerger(domain)
+            merge_result = merger.merge(explore_result, json_mode=effective_json_mode)
+            commands_list = [cmd.get("name", "") for cmd in merge_result.merged]
+            adapter_path = str(merger.metadata_path.parent / "commands.py")
+            print(f"[explore] Adapter 已合并: {adapter_path}", file=sys.stderr)
+            response_data: dict = {
                 "domain": domain,
                 "adapter_path": adapter_path,
+                "adapter_mode": "merged",
                 "commands": commands_list,
+                "commands_added": merge_result.added_count,
+                "commands_total": merge_result.total_count,
                 "pages_explored": len(explore_result.pages),
                 "actions_found": len(explore_result.actions),
             }
-        )
+            if merge_result.conflicts_resolved:
+                response_data["conflicts_resolved"] = merge_result.conflicts_resolved
+            return success_response(response_data)
 
     result = asyncio.run(_run())
     print_response(result, effective_json_mode)
