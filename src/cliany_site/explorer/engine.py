@@ -15,7 +15,11 @@ from cliany_site.explorer.models import (
     ExploreResult,
     PageInfo,
 )
-from cliany_site.explorer.prompts import EXPLORE_PROMPT_TEMPLATE, SYSTEM_PROMPT
+from cliany_site.explorer.prompts import (
+    EXPLORE_PROMPT_TEMPLATE,
+    SYSTEM_PROMPT,
+    build_atom_inventory_section,
+)
 
 MAX_STEPS = 10
 
@@ -253,6 +257,11 @@ class WorkflowExplorer:
                     workflow_description=workflow_description,
                     completed_steps=completed_steps_text,
                 )
+
+                domain = urlparse(url).netloc
+                atom_inventory = build_atom_inventory_section(domain)
+                if atom_inventory:
+                    prompt_text = f"{prompt_text}\n\n{atom_inventory}"
 
                 try:
                     response = await llm.ainvoke(f"{SYSTEM_PROMPT}\n\n{prompt_text}")
