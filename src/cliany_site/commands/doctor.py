@@ -33,6 +33,9 @@ def doctor(ctx: click.Context, json_mode: bool | None):
 
 async def _run_checks() -> dict:
     from cliany_site.browser.cdp import CDPConnection
+    from cliany_site.explorer.engine import _load_dotenv, _normalize_openai_base_url
+
+    _load_dotenv()
 
     checks = {}
 
@@ -50,6 +53,19 @@ async def _run_checks() -> dict:
         or os.environ.get("OPENAI_API_KEY")
     )
     checks["llm"] = "ok" if has_llm else "fail"
+
+    provider = os.environ.get("CLIANY_LLM_PROVIDER", "anthropic").lower()
+    checks["llm_provider"] = "ok" if provider in {"anthropic", "openai"} else "fail"
+
+    if provider == "openai":
+        base_url = os.environ.get("CLIANY_OPENAI_BASE_URL")
+        try:
+            normalized_base_url = _normalize_openai_base_url(base_url)
+            checks["openai_base_url"] = (
+                "ok" if (normalized_base_url or not base_url) else "fail"
+            )
+        except Exception:
+            checks["openai_base_url"] = "fail"
 
     adapters_dir = Path.home() / ".cliany-site" / "adapters"
     checks["adapters_dir"] = "ok" if adapters_dir.exists() else "fail"

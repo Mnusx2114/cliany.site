@@ -35,7 +35,11 @@ def explore_cmd(
     async def _run():
         from cliany_site.browser.cdp import CDPConnection
         from cliany_site.codegen.generator import AdapterGenerator, save_adapter
-        from cliany_site.explorer.engine import WorkflowExplorer, _load_dotenv
+        from cliany_site.explorer.engine import (
+            WorkflowExplorer,
+            _load_dotenv,
+            _normalize_openai_base_url,
+        )
 
         _load_dotenv()
 
@@ -47,17 +51,44 @@ def explore_cmd(
                 "启动 Chrome 并开启 --remote-debugging-port=9222",
             )
 
-        if not (
-            os.getenv("CLIANY_ANTHROPIC_API_KEY")
-            or os.getenv("CLIANY_OPENAI_API_KEY")
-            or os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-        ):
+        provider = os.getenv("CLIANY_LLM_PROVIDER", "anthropic").lower()
+        if provider not in {"anthropic", "openai"}:
             return error_response(
                 LLM_UNAVAILABLE,
-                "LLM API Key 未配置",
-                "设置 CLIANY_ANTHROPIC_API_KEY 或 CLIANY_OPENAI_API_KEY 环境变量",
+                "LLM provider 配置无效",
+                "请将 CLIANY_LLM_PROVIDER 设置为 anthropic 或 openai",
             )
+
+        has_anthropic_key = bool(
+            os.getenv("CLIANY_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        )
+        has_openai_key = bool(
+            os.getenv("CLIANY_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        )
+
+        if provider == "anthropic" and not has_anthropic_key:
+            return error_response(
+                LLM_UNAVAILABLE,
+                "Anthropic API Key 未配置",
+                "设置 CLIANY_ANTHROPIC_API_KEY（或旧版 ANTHROPIC_API_KEY）",
+            )
+
+        if provider == "openai" and not has_openai_key:
+            return error_response(
+                LLM_UNAVAILABLE,
+                "OpenAI API Key 未配置",
+                "设置 CLIANY_OPENAI_API_KEY（OpenRouter key 也可）",
+            )
+
+        if provider == "openai":
+            try:
+                _normalize_openai_base_url(os.getenv("CLIANY_OPENAI_BASE_URL"))
+            except Exception as e:
+                return error_response(
+                    LLM_UNAVAILABLE,
+                    f"OpenAI base URL 配置无效: {e}",
+                    "请使用 https://host[:port]/v1 格式，例如 https://sub2api.chinahrt.com/v1",
+                )
 
         parsed = urlparse(url)
         domain = parsed.netloc or parsed.path
