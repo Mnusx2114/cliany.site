@@ -41,11 +41,23 @@ curl http://localhost:9222/json
 
 ### LLM API Key 配置
 
+cliany-site 支持 Anthropic 和 OpenAI 两种 LLM Provider。
+
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-# 或
-export OPENAI_API_KEY="sk-..."
+# 方式一：使用 Anthropic（默认）
+export CLIANY_LLM_PROVIDER=anthropic
+export CLIANY_ANTHROPIC_API_KEY="sk-ant-..."
+export CLIANY_ANTHROPIC_MODEL="claude-3-5-haiku-20241022"  # 可选，默认 claude-3-5-haiku-20241022
+export CLIANY_ANTHROPIC_BASE_URL="https://api.anthropic.com"  # 可选，支持代理
+
+# 方式二：使用 OpenAI
+export CLIANY_LLM_PROVIDER=openai
+export CLIANY_OPENAI_API_KEY="sk-..."
+export CLIANY_OPENAI_MODEL="gpt-4o-mini"  # 可选，默认 gpt-4o-mini
+export CLIANY_OPENAI_BASE_URL="https://api.openai.com/v1"  # 可选，支持代理
 ```
+
+**向后兼容**：旧版环境变量 `ANTHROPIC_API_KEY` 仍可使用（但不推荐）。
 
 ## 使用示例
 

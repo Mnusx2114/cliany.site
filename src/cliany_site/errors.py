@@ -12,6 +12,6 @@ ERROR_FIX_HINTS: dict[str, str] = {
     EXPLORE_FAILED: "请检查 LLM API key 和 Chrome CDP 连接",
     ADAPTER_NOT_FOUND: "请先运行 cliany-site explore <url> <workflow> 生成 adapter",
     COMMAND_NOT_FOUND: "请运行 cliany-site list 查看可用命令",
-    LLM_UNAVAILABLE: "请设置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY 环境变量",
+    LLM_UNAVAILABLE: "请设置 CLIANY_LLM_PROVIDER、CLIANY_ANTHROPIC_API_KEY 或 CLIANY_OPENAI_API_KEY 环境变量",
     EXECUTION_FAILED: "请检查 Chrome CDP 连接和 adapter 状态",
 }

@@ -18,16 +18,47 @@ MAX_STEPS = 10
 
 
 def _get_llm():
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise EnvironmentError("请设置 ANTHROPIC_API_KEY 环境变量")
-    try:
-        chat_anthropic = importlib.import_module("langchain_anthropic")
-        ChatAnthropic = getattr(chat_anthropic, "ChatAnthropic")
-        return ChatAnthropic(model="claude-3-5-haiku-20241022", temperature=0)
-    except ImportError:
-        raise EnvironmentError(
-            "请安装 langchain-anthropic: pip install langchain-anthropic"
+    provider = os.environ.get("CLIANY_LLM_PROVIDER", "anthropic").lower()
+
+    if provider == "openai":
+        api_key = os.environ.get("CLIANY_OPENAI_API_KEY")
+        if not api_key:
+            raise EnvironmentError("请设置 CLIANY_OPENAI_API_KEY 环境变量")
+        model = os.environ.get("CLIANY_OPENAI_MODEL", "gpt-4o-mini")
+        base_url = os.environ.get("CLIANY_OPENAI_BASE_URL")
+        try:
+            chat_openai = importlib.import_module("langchain_openai")
+            ChatOpenAI = getattr(chat_openai, "ChatOpenAI")
+            kwargs: dict = {"model": model, "temperature": 0, "api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            return ChatOpenAI(**kwargs)
+        except ImportError:
+            raise EnvironmentError(
+                "请安装 langchain-openai: pip install langchain-openai"
+            )
+    else:
+        # anthropic（默认），向后兼容旧环境变量 ANTHROPIC_API_KEY
+        api_key = os.environ.get("CLIANY_ANTHROPIC_API_KEY") or os.environ.get(
+            "ANTHROPIC_API_KEY"
         )
+        if not api_key:
+            raise EnvironmentError(
+                "请设置 CLIANY_ANTHROPIC_API_KEY 环境变量（或旧版 ANTHROPIC_API_KEY）"
+            )
+        model = os.environ.get("CLIANY_ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
+        base_url = os.environ.get("CLIANY_ANTHROPIC_BASE_URL")
+        try:
+            chat_anthropic = importlib.import_module("langchain_anthropic")
+            ChatAnthropic = getattr(chat_anthropic, "ChatAnthropic")
+            kwargs = {"model": model, "temperature": 0, "api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            return ChatAnthropic(**kwargs)
+        except ImportError:
+            raise EnvironmentError(
+                "请安装 langchain-anthropic: pip install langchain-anthropic"
+            )
 
 
 def _parse_llm_response(text: str) -> dict:
