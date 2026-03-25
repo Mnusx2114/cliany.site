@@ -1,7 +1,6 @@
 # src/cliany_site/commands/doctor.py
 import asyncio
 import os
-import sys
 from pathlib import Path
 
 import click

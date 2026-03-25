@@ -1,12 +1,10 @@
 # src/cliany_site/browser/cdp.py
-import asyncio
 import aiohttp
 import subprocess
 from browser_use.browser.session import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from cliany_site.browser.launcher import (
     ensure_chrome,
-    find_chrome_binary,
     ChromeNotFoundError,
 )
 
