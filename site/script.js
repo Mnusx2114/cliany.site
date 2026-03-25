@@ -84,6 +84,23 @@ const I18N = {
   'footer.desc': { zh: '将任意网页操作自动化为 CLI 命令', en: 'Automate any web action into CLI commands' },
   'footer.docs': { zh: '文档', en: 'Docs' },
   'footer.quickstart': { zh: '快速开始', en: 'Quick Start' },
+  'footer.github': { zh: 'GitHub', en: 'GitHub' },
+  'footer.built': { zh: '基于 Python、Chrome CDP 和 LLM 构建', en: 'Built with Python, Chrome CDP & LLM' },
+  'footer.copyright': { zh: '© 2024-2026 cliany-site', en: '© 2024-2026 cliany-site' },
+
+  'aria.menuToggle': { zh: '切换导航', en: 'Toggle navigation' },
+  'aria.langToggle': { zh: '语言切换', en: 'Language' },
+  'aria.copyBtn': { zh: '复制到剪贴板', en: 'Copy to clipboard' },
+  'aria.github': { zh: 'GitHub', en: 'GitHub' },
+
+  'terminal.cmd1': {
+    zh: '$ cliany-site explore "https://github.com" "搜索仓库并查看 README"',
+    en: '$ cliany-site explore "https://github.com" "Search repos and view README"'
+  },
+  'terminal.cmd2': {
+    zh: '$ cliany-site github.com search --query "cliany-site" --json',
+    en: '$ cliany-site github.com search --query "cliany-site" --json'
+  },
 
   'meta.title': {
     zh: 'cliany-site | 将浏览器操作变成命令行指令',
@@ -100,9 +117,10 @@ const I18N = {
 };
 
 function getLang() {
-  var saved = localStorage.getItem('cliany-lang');
+  var saved;
+  try { saved = localStorage.getItem('cliany-lang'); } catch(e) {}
   if (saved === 'en' || saved === 'zh') return saved;
-  return navigator.language && navigator.language.startsWith('en') ? 'en' : 'zh';
+  return navigator.language && navigator.language.startsWith('zh') ? 'zh' : 'en';
 }
 
 function setLang(lang) {
@@ -110,7 +128,7 @@ function setLang(lang) {
 
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
   document.documentElement.dataset.lang = lang;
-  localStorage.setItem('cliany-lang', lang);
+  try { localStorage.setItem('cliany-lang', lang); } catch(e) {}
 
   document.querySelectorAll('[data-i18n]').forEach(function(el) {
     var key = el.getAttribute('data-i18n');
@@ -118,10 +136,25 @@ function setLang(lang) {
     if (entry) el.textContent = entry[lang];
   });
 
-  document.querySelectorAll('[data-i18n-text]').forEach(function(el) {
-    var key = el.getAttribute('data-i18n-text');
+  if (window._terminalRestart) {
+    window._terminalRestart(lang);
+  } else {
+    document.querySelectorAll('[data-i18n-text]').forEach(function(el) {
+      var key = el.getAttribute('data-i18n-text');
+      var entry = I18N[key];
+      if (entry) {
+        el.setAttribute('data-text', entry[lang]);
+        if (el.classList.contains('done')) {
+          el.textContent = entry[lang];
+        }
+      }
+    });
+  }
+
+  document.querySelectorAll('[data-i18n-aria]').forEach(function(el) {
+    var key = el.getAttribute('data-i18n-aria');
     var entry = I18N[key];
-    if (entry) el.setAttribute('data-text', entry[lang]);
+    if (entry) el.setAttribute('aria-label', entry[lang]);
   });
 
   var titleEntry = I18N['meta.title'];
@@ -142,13 +175,16 @@ function setLang(lang) {
   if (toggle) {
     toggle.dataset.active = lang;
     toggle.querySelectorAll('.lang-option').forEach(function(btn) {
-      btn.setAttribute('aria-pressed', btn.dataset.lang === lang ? 'true' : 'false');
+      var isActive = btn.dataset.lang === lang;
+      btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+      btn.setAttribute('tabindex', isActive ? '0' : '-1');
     });
   }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
   setLang(getLang());
+  document.body.style.visibility = 'visible';
 
   var toggle = document.querySelector('.lang-toggle');
   if (toggle) {
@@ -156,6 +192,16 @@ document.addEventListener('DOMContentLoaded', function() {
       var btn = e.target.closest('.lang-option');
       if (!btn) return;
       setLang(btn.dataset.lang);
+    });
+
+    toggle.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        var newLang = toggle.dataset.active === 'zh' ? 'en' : 'zh';
+        setLang(newLang);
+        var target = toggle.querySelector('.lang-option[data-lang="' + newLang + '"]');
+        if (target) target.focus();
+      }
     });
   }
 
@@ -196,6 +242,26 @@ document.addEventListener('DOMContentLoaded', function() {
     var typeLines = heroTerminal.querySelectorAll('.type-line');
     var resultLines = heroTerminal.querySelectorAll('.result-lines');
     var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var terminalTimers = [];
+
+    var clearTerminalTimers = function() {
+      terminalTimers.forEach(function(id) { clearTimeout(id); });
+      terminalTimers = [];
+    };
+
+    window._terminalRestart = function(lang) {
+      clearTerminalTimers();
+      typeLines.forEach(function(line) {
+        var key = line.getAttribute('data-i18n-text');
+        var entry = I18N[key];
+        if (entry) {
+          line.setAttribute('data-text', entry[lang]);
+          if (line.classList.contains('done')) {
+            line.textContent = entry[lang];
+          }
+        }
+      });
+    };
 
     if (prefersReducedMotion) {
       typeLines.forEach(function(line) {
@@ -205,25 +271,33 @@ document.addEventListener('DOMContentLoaded', function() {
       resultLines.forEach(function(res) { res.classList.add('visible'); });
     } else {
       var currentLineIndex = 0;
+      var typingCancelled = false;
 
       var typeText = function(element, text, speed, callback) {
         var i = 0;
         element.textContent = '';
+        typingCancelled = false;
 
         var typeChar = function() {
+          if (typingCancelled) return;
           if (i < text.length) {
             element.textContent += text.charAt(i);
             i++;
-            setTimeout(typeChar, speed + (Math.random() * 20));
+            var tid = setTimeout(typeChar, speed + (Math.random() * 20));
+            terminalTimers.push(tid);
           } else {
             element.classList.add('done');
-            if (callback) setTimeout(callback, 200);
+            if (callback) {
+              var tid = setTimeout(callback, 200);
+              terminalTimers.push(tid);
+            }
           }
         };
         typeChar();
       };
 
       var animateTerminal = function() {
+        if (typingCancelled) return;
         if (currentLineIndex < typeLines.length) {
           var currentLine = typeLines[currentLineIndex];
           var text = currentLine.getAttribute('data-text');
@@ -233,16 +307,53 @@ document.addEventListener('DOMContentLoaded', function() {
               resultLines[currentLineIndex].classList.add('visible');
             }
             currentLineIndex++;
-            setTimeout(animateTerminal, 600);
+            var tid = setTimeout(animateTerminal, 600);
+            terminalTimers.push(tid);
           });
         }
       };
 
-      setTimeout(animateTerminal, 1000);
+      window._terminalRestart = function(lang) {
+        typingCancelled = true;
+        clearTerminalTimers();
+        currentLineIndex = 0;
+
+        typeLines.forEach(function(line) {
+          var key = line.getAttribute('data-i18n-text');
+          var entry = I18N[key];
+          if (entry) {
+            line.setAttribute('data-text', entry[lang]);
+          }
+          if (line.classList.contains('done')) {
+            if (entry) line.textContent = entry[lang];
+          } else {
+            line.textContent = '';
+            line.classList.remove('done');
+          }
+        });
+        resultLines.forEach(function(res) {
+          if (!res.classList.contains('visible')) return;
+          /* keep already-revealed results visible */
+        });
+
+        /* Restart animation from where incomplete lines begin */
+        for (var idx = 0; idx < typeLines.length; idx++) {
+          if (!typeLines[idx].classList.contains('done')) {
+            currentLineIndex = idx;
+            typingCancelled = false;
+            var tid = setTimeout(animateTerminal, 300);
+            terminalTimers.push(tid);
+            return;
+          }
+        }
+        /* All lines done — just update text, no restart needed */
+      };
+
+      var tid = setTimeout(animateTerminal, 1000);
+      terminalTimers.push(tid);
     }
   }
 
-  var currentLang = getLang;
   var copyButtons = document.querySelectorAll('.copy-btn');
   copyButtons.forEach(function(btn) {
     btn.addEventListener('click', function() {

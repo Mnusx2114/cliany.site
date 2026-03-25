@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script>document.documentElement.classList.replace('no-js','js');</script>
-  <script>(function(){var s=localStorage.getItem('cliany-lang');var l=(s==='en'||s==='zh')?s:(navigator.language&&navigator.language.startsWith('en')?'en':'zh');document.documentElement.lang=l==='en'?'en':'zh-CN';document.documentElement.dataset.lang=l;})()</script>
+  <script>(function(){var s;try{s=localStorage.getItem('cliany-lang')}catch(e){}var l=(s==='en'||s==='zh')?s:(navigator.language&&navigator.language.startsWith('zh')?'zh':'en');document.documentElement.lang=l==='en'?'en':'zh-CN';document.documentElement.dataset.lang=l;})()</script>
 </head>
 <body>
   <div class="noise-overlay"></div>
@@ -23,7 +23,7 @@
     <div class="container nav-container">
       <a href="#" class="logo">cliany<span class="logo-dot">.</span>site</a>
       
-      <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="main-nav">
+      <button class="menu-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="main-nav" data-i18n-aria="aria.menuToggle">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="3" y1="12" x2="21" y2="12"></line>
           <line x1="3" y1="6" x2="21" y2="6"></line>
@@ -35,12 +35,12 @@
         <a href="#features" class="nav-link" data-i18n="nav.features">功能</a>
         <a href="#how-it-works" class="nav-link" data-i18n="nav.how">工作原理</a>
         <a href="#quickstart" class="nav-link" data-i18n="nav.quickstart">快速开始</a>
-        <div class="lang-toggle" role="radiogroup" aria-label="Language" data-active="zh">
-          <button class="lang-option" data-lang="zh" aria-pressed="true">中文</button>
-          <button class="lang-option" data-lang="en" aria-pressed="false">EN</button>
+        <div class="lang-toggle" role="radiogroup" aria-label="Language" data-active="zh" data-i18n-aria="aria.langToggle">
+          <button class="lang-option" data-lang="zh" role="radio" aria-checked="true" tabindex="0">中文</button>
+          <button class="lang-option" data-lang="en" role="radio" aria-checked="false" tabindex="-1">EN</button>
           <span class="lang-slider" aria-hidden="true"></span>
         </div>
-        <a href="https://github.com/pearjelly/cliany.site" target="_blank" rel="noopener noreferrer" class="nav-icon" aria-label="GitHub">
+        <a href="https://github.com/pearjelly/cliany.site" target="_blank" rel="noopener noreferrer" class="nav-icon" aria-label="GitHub" data-i18n-aria="aria.github">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z"></path>
           </svg>
@@ -67,7 +67,7 @@
             <span class="dot dot-green"></span>
           </div>
           <div class="terminal-body" id="hero-terminal">
-            <div class="line type-line" data-text="$ cliany-site explore &#34;https://github.com&#34; &#34;搜索仓库并查看 README&#34;"></div>
+            <div class="line type-line" data-i18n-text="terminal.cmd1" data-text="$ cliany-site explore &#34;https://github.com&#34; &#34;搜索仓库并查看 README&#34;"></div>
             <div class="result-lines">
               <div class="line muted" data-i18n="terminal.connecting">✓ 正在连接 Chrome CDP...</div>
               <div class="line muted" data-i18n="terminal.analyzing">✓ 正在分析页面结构...</div>
@@ -75,7 +75,7 @@
               <div class="line success" data-i18n="terminal.generated">✓ 生成 CLI 命令至 ~/.cliany-site/adapters/github.com/</div>
               <br>
             </div>
-            <div class="line type-line delay" data-text="$ cliany-site github.com search --query &#34;cliany-site&#34; --json"></div>
+            <div class="line type-line delay" data-i18n-text="terminal.cmd2" data-text="$ cliany-site github.com search --query &#34;cliany-site&#34; --json"></div>
             <div class="result-lines delay">
               <div class="line json">{"success": true, "data": {"results": [...]}}</div>
             </div>
@@ -209,7 +209,7 @@
               <pre class="code-block"><code>git clone https://github.com/pearjelly/cliany.site.git
 cd cliany-site
 pip install -e .</code></pre>
-              <button class="copy-btn" data-clipboard="git clone https://github.com/pearjelly/cliany.site.git&#10;cd cliany-site&#10;pip install -e ." aria-label="Copy to clipboard" data-i18n="copy.btn">复制</button>
+              <button class="copy-btn" data-clipboard="git clone https://github.com/pearjelly/cliany.site.git&#10;cd cliany-site&#10;pip install -e ." aria-label="Copy to clipboard" data-i18n="copy.btn" data-i18n-aria="aria.copyBtn">复制</button>
             </div>
           </div>
 
@@ -218,7 +218,7 @@ pip install -e .</code></pre>
             <div class="code-block-container">
               <pre class="code-block"><code>export CLIANY_LLM_PROVIDER=anthropic
 export CLIANY_ANTHROPIC_API_KEY="sk-ant-..."</code></pre>
-              <button class="copy-btn" data-clipboard="export CLIANY_LLM_PROVIDER=anthropic&#10;export CLIANY_ANTHROPIC_API_KEY=&#34;sk-ant-...&#34;" aria-label="Copy to clipboard" data-i18n="copy.btn">复制</button>
+              <button class="copy-btn" data-clipboard="export CLIANY_LLM_PROVIDER=anthropic&#10;export CLIANY_ANTHROPIC_API_KEY=&#34;sk-ant-...&#34;" aria-label="Copy to clipboard" data-i18n="copy.btn" data-i18n-aria="aria.copyBtn">复制</button>
             </div>
           </div>
 
@@ -229,7 +229,7 @@ export CLIANY_ANTHROPIC_API_KEY="sk-ant-..."</code></pre>
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
   --user-data-dir=/tmp/chrome-debug</code></pre>
-              <button class="copy-btn" data-clipboard="# macOS&#10;/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \&#10;  --remote-debugging-port=9222 \&#10;  --user-data-dir=/tmp/chrome-debug" aria-label="Copy to clipboard" data-i18n="copy.btn">复制</button>
+              <button class="copy-btn" data-clipboard="# macOS&#10;/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \&#10;  --remote-debugging-port=9222 \&#10;  --user-data-dir=/tmp/chrome-debug" aria-label="Copy to clipboard" data-i18n="copy.btn" data-i18n-aria="aria.copyBtn">复制</button>
             </div>
           </div>
 
@@ -238,7 +238,7 @@ export CLIANY_ANTHROPIC_API_KEY="sk-ant-..."</code></pre>
             <div class="code-block-container">
               <pre class="code-block"><code>cliany-site doctor --json
 cliany-site explore "https://github.com" "搜索仓库" --json</code></pre>
-              <button class="copy-btn" data-clipboard="cliany-site doctor --json&#10;cliany-site explore &#34;https://github.com&#34; &#34;搜索仓库&#34; --json" aria-label="Copy to clipboard" data-i18n="copy.btn">复制</button>
+              <button class="copy-btn" data-clipboard="cliany-site doctor --json&#10;cliany-site explore &#34;https://github.com&#34; &#34;搜索仓库&#34; --json" aria-label="Copy to clipboard" data-i18n="copy.btn" data-i18n-aria="aria.copyBtn">复制</button>
             </div>
           </div>
         </div>
@@ -253,17 +253,18 @@ cliany-site explore "https://github.com" "搜索仓库" --json</code></pre>
         <p class="footer-desc" data-i18n="footer.desc">将任意网页操作自动化为 CLI 命令</p>
       </div>
       <div class="footer-right">
-        <a href="https://github.com/pearjelly/cliany.site" target="_blank" rel="noopener noreferrer" class="footer-link">GitHub</a>
+        <a href="https://github.com/pearjelly/cliany.site" target="_blank" rel="noopener noreferrer" class="footer-link" data-i18n="footer.github">GitHub</a>
         <a href="https://github.com/pearjelly/cliany.site#readme" target="_blank" rel="noopener noreferrer" class="footer-link" data-i18n="footer.docs">文档</a>
         <a href="#quickstart" class="footer-link" data-i18n="footer.quickstart">快速开始</a>
       </div>
     </div>
     <div class="container footer-bottom">
-      <p>Built with Python, Chrome CDP & LLM</p>
-      <p>© 2024-2026 cliany-site</p>
+      <p data-i18n="footer.built">Built with Python, Chrome CDP & LLM</p>
+      <p data-i18n="footer.copyright">© 2024-2026 cliany-site</p>
     </div>
   </footer>
 
   <script src="script.js"></script>
+  <script>setTimeout(function(){document.body.style.visibility='visible'},2000)</script>
 </body>
 </html>

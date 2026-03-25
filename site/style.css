@@ -40,6 +40,10 @@ body {
   overflow-x: hidden;
 }
 
+html.js body {
+  visibility: hidden;
+}
+
 /* Subtle noise overlay */
 .noise-overlay {
   position: fixed;
@@ -189,10 +193,10 @@ img, svg {
   display: inline-flex;
   align-items: center;
   position: relative;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: rgba(237, 232, 223, 0.6);
+  border: 1px solid rgba(120, 100, 75, 0.1);
   border-radius: 20px;
-  padding: 2px;
+  padding: 3px;
 }
 
 html.no-js .lang-toggle {
@@ -200,35 +204,44 @@ html.no-js .lang-toggle {
 }
 
 .lang-option {
-  padding: 4px 14px;
-  font-size: 0.85rem;
+  padding: 4px 0;
+  width: 44px;
+  text-align: center;
+  font-size: 0.8rem;
   font-weight: 500;
+  letter-spacing: 0.02em;
   font-family: var(--font-body);
   border: none;
   background: transparent;
   cursor: pointer;
   position: relative;
   z-index: 1;
-  border-radius: 18px;
+  border-radius: 16px;
   color: var(--color-text-muted);
   transition: color var(--transition);
   line-height: 1.4;
 }
 
-.lang-option[aria-pressed="true"] {
-  color: var(--color-white);
+.lang-option:hover {
+  color: var(--color-text-main);
+}
+
+.lang-option[aria-checked="true"] {
+  color: var(--color-text-main);
 }
 
 .lang-slider {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  height: calc(100% - 4px);
-  width: calc(50% - 2px);
-  background: var(--color-accent);
-  border-radius: 18px;
+  top: 3px;
+  left: 3px;
+  height: calc(100% - 6px);
+  width: 44px;
+  background: var(--color-white);
+  border-radius: 16px;
   transition: transform var(--transition);
   z-index: 0;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(26, 22, 18, 0.06), 0 1px 2px rgba(120, 100, 75, 0.04);
 }
 
 .lang-toggle[data-active="en"] .lang-slider {
