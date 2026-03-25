@@ -148,6 +148,8 @@ def explore_cmd(
 
         adapter_dir = Path.home() / ".cliany-site" / "adapters" / domain
 
+        from cliany_site.activity_log import write_log
+
         if force or not adapter_dir.exists():
             gen = AdapterGenerator()
             code = gen.generate(explore_result, domain)
@@ -160,6 +162,13 @@ def explore_cmd(
             )
             commands_list = [cmd.name for cmd in explore_result.commands]
             print(f"[explore] Adapter 已生成: {adapter_path}", file=sys.stderr)
+            write_log(
+                "explore",
+                domain,
+                workflow_description,
+                "success",
+                f"created {len(commands_list)} commands",
+            )
             return success_response(
                 {
                     "domain": domain,
@@ -179,6 +188,13 @@ def explore_cmd(
             commands_list = [cmd.get("name", "") for cmd in merge_result.merged]
             adapter_path = str(merger.metadata_path.parent / "commands.py")
             print(f"[explore] Adapter 已合并: {adapter_path}", file=sys.stderr)
+            write_log(
+                "explore",
+                domain,
+                workflow_description,
+                "success",
+                f"merged {merge_result.added_count} new commands, total {merge_result.total_count}",
+            )
             response_data: dict = {
                 "domain": domain,
                 "adapter_path": adapter_path,
