@@ -489,6 +489,7 @@ dependencies = [
     { name = "browser-use" },
     { name = "click" },
     { name = "langchain-openai" },
+    { name = "python-dotenv" },
     { name = "rich" },
 ]
 
@@ -497,6 +498,7 @@ requires-dist = [
     { name = "browser-use" },
     { name = "click" },
     { name = "langchain-openai" },
+    { name = "python-dotenv" },
     { name = "rich" },
 ]
 

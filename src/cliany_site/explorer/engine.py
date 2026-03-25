@@ -2,6 +2,7 @@ import json
 import importlib
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 from cliany_site.browser.axtree import capture_axtree, serialize_axtree
@@ -17,7 +18,48 @@ from cliany_site.explorer.prompts import EXPLORE_PROMPT_TEMPLATE, SYSTEM_PROMPT
 MAX_STEPS = 10
 
 
+def _load_dotenv() -> None:
+    """从 .env 文件加载环境变量，不覆盖已存在的系统环境变量。
+
+    查找顺序（后者优先级低，先查找优先级低的，后查找高优先级会覆盖低优先级）：
+    1. ~/.cliany-site/.env（用户级配置，最低优先级）
+    2. 项目目录 .env（项目级配置）
+    3. os.environ 中已有的值保持不变（最高优先级）
+    """
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        # python-dotenv 未安装，跳过
+        return
+
+    # 收集要加载的 .env 文件，按优先级从低到高排列
+    env_files: list[Path] = []
+
+    # 用户主目录级别（最低优先级）
+    user_env = Path.home() / ".cliany-site" / ".env"
+    if user_env.is_file():
+        env_files.append(user_env)
+
+    # 项目目录级别（中优先级）
+    project_env = Path.cwd() / ".env"
+    if project_env.is_file():
+        env_files.append(project_env)
+
+    # 从低优先级到高优先级依次加载，后加载的覆盖前面加载的
+    # 但都不覆盖已存在的 os.environ 值（系统环境变量优先级最高）
+    merged: dict[str, str] = {}
+    for env_file in env_files:
+        values = dotenv_values(env_file)
+        merged.update({k: v for k, v in values.items() if v is not None})
+
+    # 只将 os.environ 中不存在的键写入（保证系统环境变量优先级最高）
+    for key, value in merged.items():
+        if key not in os.environ:
+            os.environ[key] = value
+
+
 def _get_llm():
+    _load_dotenv()
     provider = os.environ.get("CLIANY_LLM_PROVIDER", "anthropic").lower()
 
     if provider == "openai":
