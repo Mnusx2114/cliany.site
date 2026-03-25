@@ -42,6 +42,13 @@ async def _run_checks() -> dict:
     try:
         cdp = CDPConnection()
         checks["cdp"] = "ok" if await cdp.check_available() else "fail"
+
+        # Chrome 检测信息
+        from cliany_site.browser.launcher import find_chrome_binary
+
+        chrome_binary = find_chrome_binary()
+        checks["chrome_binary_path"] = str(chrome_binary) if chrome_binary else None
+        checks["chrome_auto_launched"] = getattr(cdp, "_chrome_auto_launched", False)
     except Exception:
         checks["cdp"] = "fail"
 

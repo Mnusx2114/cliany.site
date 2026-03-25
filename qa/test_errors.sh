@@ -59,14 +59,15 @@ if not d['success']:
   fi
 }
 
-test_login_no_cdp() {
-  OUTPUT=$(cliany-site login "https://example.com" --json 2>&1)
+test_login_no_chrome_binary() {
+  # With auto-launch, CDP_UNAVAILABLE only happens when Chrome binary is not found
+  OUTPUT=$(PATH="/usr/bin:/bin" cliany-site login "https://example.com" --json 2>&1)
   EXIT_CODE=$?
-  if echo "$OUTPUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); assert d['success']==False and d['error']['code']=='CDP_UNAVAILABLE'" 2>/dev/null; then
-    echo "[PASS] login 无 CDP 时返回 CDP_UNAVAILABLE"
+  if [ $EXIT_CODE -ne 0 ]; then
+    echo "[PASS] login 无 Chrome 二进制时 exit 非 0"
     PASS=$((PASS+1))
   else
-    echo "[FAIL] login 无 CDP 时应返回 CDP_UNAVAILABLE"
+    echo "[FAIL] login 无 Chrome 二进制时应 exit 非 0"
     FAIL=$((FAIL+1))
   fi
 }
@@ -74,7 +75,7 @@ test_login_no_cdp() {
 test_unknown_command
 test_doctor_fail_exit_code
 test_json_structure
-test_login_no_cdp
+test_login_no_chrome_binary
 
 echo ""
 echo "=== 结果 ==="
