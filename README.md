@@ -194,7 +194,7 @@ cliany-site
 ├── explorer/
 │   ├── engine.py   WorkflowExplorer + 原子复用
 │   ├── analyzer.py AtomExtractor 原子提取器
-│   └── validator.py ActionValidator 多阶段验证
+│   └── validator.py ActionValidator 纯逻辑验证
 ├── codegen/
 │   ├── generator.py AdapterGenerator
 │   └── merger.py   适配器增量合并

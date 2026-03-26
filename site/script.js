@@ -59,8 +59,8 @@ const I18N = {
   },
   'features.atoms.title': { zh: '原子命令系统', en: 'Atomic Command System' },
   'features.atoms.desc': {
-    zh: '从工作流中自动提取可复用的原子操作，跨适配器共享登录、搜索等通用步骤，参数化执行。',
-    en: 'Auto-extract reusable atomic actions from workflows. Share common steps like login and search across adapters with parameterized execution.'
+    zh: '从工作流中自动提取可复用的原子操作，跨适配器共享登录、搜索等通用步骤，参数化复用。',
+    en: 'Auto-extract reusable atomic actions from workflows. Share common steps like login and search across adapters with parameterized reuse.'
   },
   'features.validator.title': { zh: '智能录制验证', en: 'Smart Recording Validation' },
   'features.validator.desc': {
