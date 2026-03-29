@@ -1,4 +1,3 @@
-
 from cliany_site.action_runtime import (
     _action_has_href,
     _action_opens_new_tab,
@@ -50,15 +49,10 @@ class TestParseRefToIndex:
 
 class TestNormalizeNavigationUrl:
     def test_valid_absolute_url(self):
-        assert (
-            normalize_navigation_url("https://example.com/page", "")
-            == "https://example.com/page"
-        )
+        assert normalize_navigation_url("https://example.com/page", "") == "https://example.com/page"
 
     def test_http_url(self):
-        assert (
-            normalize_navigation_url("http://example.com", "") == "http://example.com"
-        )
+        assert normalize_navigation_url("http://example.com", "") == "http://example.com"
 
     def test_relative_url_with_current(self):
         result = normalize_navigation_url("/about", "https://example.com/page")
@@ -89,22 +83,13 @@ class TestNormalizeNavigationUrl:
         assert normalize_navigation_url("has spaces", "") == ""
 
     def test_unwraps_quotes(self):
-        assert (
-            normalize_navigation_url('"https://example.com"', "")
-            == "https://example.com"
-        )
+        assert normalize_navigation_url('"https://example.com"', "") == "https://example.com"
 
     def test_unwraps_brackets(self):
-        assert (
-            normalize_navigation_url("[https://example.com]", "")
-            == "https://example.com"
-        )
+        assert normalize_navigation_url("[https://example.com]", "") == "https://example.com"
 
     def test_strips_trailing_punctuation(self):
-        assert (
-            normalize_navigation_url("https://example.com，", "")
-            == "https://example.com"
-        )
+        assert normalize_navigation_url("https://example.com，", "") == "https://example.com"
 
     def test_invalid_scheme(self):
         assert normalize_navigation_url("ftp://example.com", "") == ""
@@ -121,9 +106,7 @@ class TestSubstituteParameters:
 
     def test_matching_params(self):
         actions = [{"value": "hello {{name}}", "url": "https://{{host}}/api"}]
-        result = substitute_parameters(
-            actions, {"name": "world", "host": "example.com"}
-        )
+        result = substitute_parameters(actions, {"name": "world", "host": "example.com"})
         assert result[0]["value"] == "hello world"
         assert result[0]["url"] == "https://example.com/api"
 
@@ -209,6 +192,42 @@ class TestScoreCandidate:
     def test_empty_inputs(self):
         assert _score_candidate({}, {}, "") == 0
 
+    def test_frame_id_match_adds_score(self):
+        action = {"target_name": "", "target_role": "", "target_attributes": {}, "target_frame_id": "frame-abc"}
+        candidate = {"name": "", "role": "", "attributes": {}, "frame_id": "frame-abc"}
+        score = _score_candidate(action, candidate, "")
+        assert score >= 10
+
+    def test_frame_id_mismatch_no_bonus(self):
+        action = {"target_name": "", "target_role": "", "target_attributes": {}, "target_frame_id": "frame-abc"}
+        candidate = {"name": "", "role": "", "attributes": {}, "frame_id": "frame-xyz"}
+        score = _score_candidate(action, candidate, "")
+        assert score == 0
+
+    def test_shadow_root_type_match_adds_score(self):
+        action = {"target_name": "", "target_role": "", "target_attributes": {}, "target_shadow_root_type": "open"}
+        candidate = {"name": "", "role": "", "attributes": {}, "shadow_root_type": "open"}
+        score = _score_candidate(action, candidate, "")
+        assert score >= 5
+
+    def test_frame_and_shadow_combined(self):
+        action = {
+            "target_name": "Submit",
+            "target_role": "button",
+            "target_attributes": {},
+            "target_frame_id": "frame-1",
+            "target_shadow_root_type": "open",
+        }
+        candidate = {
+            "name": "Submit",
+            "role": "button",
+            "attributes": {},
+            "frame_id": "frame-1",
+            "shadow_root_type": "open",
+        }
+        score = _score_candidate(action, candidate, "")
+        assert score >= 40 + 15 + 10 + 5
+
 
 class TestActionHasHref:
     def test_has_href(self):
@@ -226,14 +245,10 @@ class TestActionHasHref:
 
 class TestActionOpensNewTab:
     def test_blank_target(self):
-        assert (
-            _action_opens_new_tab({"target_attributes": {"target": "_blank"}}) is True
-        )
+        assert _action_opens_new_tab({"target_attributes": {"target": "_blank"}}) is True
 
     def test_other_target(self):
-        assert (
-            _action_opens_new_tab({"target_attributes": {"target": "_self"}}) is False
-        )
+        assert _action_opens_new_tab({"target_attributes": {"target": "_self"}}) is False
 
     def test_no_target(self):
         assert _action_opens_new_tab({"target_attributes": {}}) is False

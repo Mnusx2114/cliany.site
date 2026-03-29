@@ -186,4 +186,4 @@ Generated adapters are stored in `~/.cliany-site/adapters/<domain>/`, containing
 - Requires a valid `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
 - Generated commands depend on page DOM structure; re-exploration may be needed after page updates
 - Sessions are not shared across browser profiles
-- Currently does not support automatic operations on elements inside iframes
+- iframe element operations and Shadow DOM piercing rely on browser-use's recursive capture; cross-origin iframes are enabled by default (configurable via `CLIANY_CROSS_ORIGIN_IFRAMES`)

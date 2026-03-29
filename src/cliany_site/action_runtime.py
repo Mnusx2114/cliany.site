@@ -174,6 +174,16 @@ def _score_candidate(
     if target_role and candidate_role and target_role == candidate_role:
         score += 15
 
+    target_frame_id = action_data.get("target_frame_id", "")
+    candidate_frame_id = candidate.get("frame_id", "")
+    if target_frame_id and candidate_frame_id and str(target_frame_id) == str(candidate_frame_id):
+        score += 10
+
+    target_shadow = action_data.get("target_shadow_root_type", "")
+    candidate_shadow = candidate.get("shadow_root_type", "")
+    if target_shadow and candidate_shadow and str(target_shadow) == str(candidate_shadow):
+        score += 5
+
     target_attributes = action_data.get("target_attributes", {})
     candidate_attributes = candidate.get("attributes", {})
     if isinstance(target_attributes, dict) and isinstance(candidate_attributes, dict):

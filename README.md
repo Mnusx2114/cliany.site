@@ -214,4 +214,4 @@ cliany-site
 - 需要有效的 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`
 - 生成的命令依赖页面 DOM 结构，页面更新后可能需要重新 explore
 - Session 不跨浏览器 Profile 共享
-- 目前不支持 iframe 内元素的自动操作
+- iframe 内元素操作和 Shadow DOM 穿透依赖 browser-use 的递归采集能力，跨域 iframe 默认启用（可通过 `CLIANY_CROSS_ORIGIN_IFRAMES` 配置）

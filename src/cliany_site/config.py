@@ -54,6 +54,10 @@ class ClanySiteConfig:
 
     explore_max_steps: int = 10
 
+    cross_origin_iframes: bool = True
+    max_iframes: int = 100
+    max_iframe_depth: int = 5
+
     home_dir: Path = field(default_factory=lambda: Path.home() / ".cliany-site")
 
     @property
@@ -90,6 +94,9 @@ class ClanySiteConfig:
             "adaptive_repair_enabled": self.adaptive_repair_enabled,
             "adaptive_repair_max_attempts": self.adaptive_repair_max_attempts,
             "explore_max_steps": self.explore_max_steps,
+            "cross_origin_iframes": self.cross_origin_iframes,
+            "max_iframes": self.max_iframes,
+            "max_iframe_depth": self.max_iframe_depth,
             "home_dir": str(self.home_dir),
             "adapters_dir": str(self.adapters_dir),
             "sessions_dir": str(self.sessions_dir),
@@ -113,6 +120,9 @@ def load_config() -> ClanySiteConfig:
         adaptive_repair_enabled=_env_bool("CLIANY_ADAPTIVE_REPAIR", False),
         adaptive_repair_max_attempts=_env_int("CLIANY_ADAPTIVE_REPAIR_MAX_ATTEMPTS", 3),
         explore_max_steps=_env_int("CLIANY_EXPLORE_MAX_STEPS", 10),
+        cross_origin_iframes=_env_bool("CLIANY_CROSS_ORIGIN_IFRAMES", True),
+        max_iframes=_env_int("CLIANY_MAX_IFRAMES", 100),
+        max_iframe_depth=_env_int("CLIANY_MAX_IFRAME_DEPTH", 5),
     )
 
 
