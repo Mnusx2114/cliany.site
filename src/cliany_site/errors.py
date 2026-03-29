@@ -1,3 +1,40 @@
+# ---------------------------------------------------------------------------
+# 异常层级体系
+# ---------------------------------------------------------------------------
+
+
+class ClanySiteError(Exception):
+    """cliany-site 所有自定义异常的基类"""
+
+
+class CdpError(ClanySiteError):
+    """CDP 连接 / 浏览器通信相关异常"""
+
+
+class SessionError(ClanySiteError):
+    """Session 持久化（cookies / localStorage）相关异常"""
+
+
+class ExplorerError(ClanySiteError):
+    """工作流探索（LLM 交互 / AXTree 采集）相关异常"""
+
+
+class CodegenError(ClanySiteError):
+    """代码生成（adapter 输出 / 模板渲染）相关异常"""
+
+
+class AdapterLoadError(ClanySiteError):
+    """适配器动态加载 / 注册相关异常"""
+
+
+class WorkflowError(ClanySiteError):
+    """工作流编排相关异常"""
+
+
+# ---------------------------------------------------------------------------
+# 错误码常量（用于 JSON 信封的 error.code 字段）
+# ---------------------------------------------------------------------------
+
 CDP_UNAVAILABLE = "CDP_UNAVAILABLE"
 SESSION_EXPIRED = "SESSION_EXPIRED"
 EXPLORE_FAILED = "EXPLORE_FAILED"
@@ -6,6 +43,10 @@ COMMAND_NOT_FOUND = "COMMAND_NOT_FOUND"
 LLM_UNAVAILABLE = "LLM_UNAVAILABLE"
 EXECUTION_FAILED = "EXECUTION_FAILED"
 CHROME_NOT_FOUND = "CHROME_NOT_FOUND"
+WORKFLOW_PARSE_ERROR = "WORKFLOW_PARSE_ERROR"
+WORKFLOW_FAILED = "WORKFLOW_FAILED"
+BATCH_DATA_ERROR = "BATCH_DATA_ERROR"
+BATCH_PARTIAL_FAILURE = "BATCH_PARTIAL_FAILURE"
 
 ERROR_FIX_HINTS: dict[str, str] = {
     CDP_UNAVAILABLE: "请先启动 Chrome：google-chrome --remote-debugging-port=9222",
@@ -16,4 +57,8 @@ ERROR_FIX_HINTS: dict[str, str] = {
     LLM_UNAVAILABLE: "请设置 CLIANY_LLM_PROVIDER、CLIANY_ANTHROPIC_API_KEY 或 CLIANY_OPENAI_API_KEY 环境变量",
     EXECUTION_FAILED: "请检查 Chrome CDP 连接和 adapter 状态",
     CHROME_NOT_FOUND: "请安装 Chrome 或确认 Chrome 可执行文件在 PATH 中",
+    WORKFLOW_PARSE_ERROR: "请检查 YAML 工作流文件格式",
+    WORKFLOW_FAILED: "请检查各步骤的 adapter 和命令配置",
+    BATCH_DATA_ERROR: "请检查 CSV/JSON 数据文件格式",
+    BATCH_PARTIAL_FAILURE: "请检查失败项的错误信息",
 }

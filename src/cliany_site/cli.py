@@ -1,18 +1,25 @@
 import sys
+from collections.abc import Sequence
 from importlib.metadata import version
-from pathlib import Path
-from typing import NoReturn, Sequence
+from typing import NoReturn
 
 import click
 
+from cliany_site.config import get_config
 from cliany_site.errors import COMMAND_NOT_FOUND, EXECUTION_FAILED
+from cliany_site.logging_config import (
+    LEVEL_DEBUG,
+    LEVEL_QUIET,
+    LEVEL_VERBOSE,
+    setup_logging,
+)
 from cliany_site.response import error_response, print_response
 
 
 def _ensure_dirs():
-    home = Path.home() / ".cliany-site"
-    (home / "adapters").mkdir(parents=True, exist_ok=True)
-    (home / "sessions").mkdir(parents=True, exist_ok=True)
+    cfg = get_config()
+    cfg.adapters_dir.mkdir(parents=True, exist_ok=True)
+    cfg.sessions_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _is_json_mode(args: list[str] | None) -> bool:
@@ -67,15 +74,15 @@ class SafeGroup(click.Group):
                 **extra,
             )
         except click.exceptions.Exit as exc:
-            raise SystemExit(exc.exit_code)
+            raise SystemExit(exc.exit_code) from exc
         except SystemExit:
             raise
         except click.ClickException as exc:
             _render_error(exc, json_mode=_is_json_mode(argv))
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
         except Exception as exc:
             _render_error(exc, json_mode=_is_json_mode(argv))
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
         if isinstance(result, int):
             raise SystemExit(result)
@@ -85,22 +92,39 @@ class SafeGroup(click.Group):
 @click.group(cls=SafeGroup, invoke_without_command=True)
 @click.version_option(version("cliany-site"), "--version")
 @click.option("--json", "json_mode", is_flag=True, default=False, help="JSON 输出模式")
+@click.option("--verbose", "-v", is_flag=True, default=False, help="显示详细日志 (INFO)")
+@click.option("--debug", is_flag=True, default=False, help="显示调试日志 (DEBUG)")
+@click.option("--cdp-url", default=None, help="远程 CDP 地址 (如 ws://host:9222)")
+@click.option("--headless", is_flag=True, default=False, help="以 Headless 模式启动 Chrome")
 @click.pass_context
-def cli(ctx, json_mode):
+def cli(ctx, json_mode, verbose, debug, cdp_url, headless):
     """cliany-site: 将任意网站 CLI 化"""
     _ensure_dirs()
     ctx.ensure_object(dict)
     ctx.obj["json_mode"] = json_mode
+    ctx.obj["cdp_url"] = cdp_url
+    ctx.obj["headless"] = headless
+
+    if debug:
+        log_level = LEVEL_DEBUG
+    elif verbose:
+        log_level = LEVEL_VERBOSE
+    else:
+        log_level = LEVEL_QUIET
+    setup_logging(level=log_level, json_format=json_mode)
+
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
 
+from cliany_site.commands.check import check_cmd
 from cliany_site.commands.doctor import doctor
 from cliany_site.commands.explore import explore_cmd
-from cliany_site.commands.login import login
 from cliany_site.commands.list_cmd import list_cmd
-from cliany_site.commands.tui import tui_cmd
+from cliany_site.commands.login import login
 from cliany_site.commands.report import report_group
+from cliany_site.commands.tui import tui_cmd
+from cliany_site.commands.workflow import workflow_group
 
 cli.add_command(doctor)
 cli.add_command(login)
@@ -108,6 +132,8 @@ cli.add_command(explore_cmd)
 cli.add_command(list_cmd)
 cli.add_command(tui_cmd)
 cli.add_command(report_group)
+cli.add_command(check_cmd)
+cli.add_command(workflow_group)
 
 from cliany_site.loader import register_adapters
 

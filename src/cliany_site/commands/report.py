@@ -40,11 +40,11 @@ def report_show(ctx: click.Context, report_id: str, json_mode: bool | None):
         json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
     )
 
-    from cliany_site.report import REPORTS_DIR
+    from cliany_site.config import get_config
 
     candidate = Path(report_id)
     if not candidate.is_absolute():
-        candidate = REPORTS_DIR / report_id
+        candidate = get_config().reports_dir / report_id
 
     if not candidate.exists():
         result = error_response(
@@ -58,7 +58,7 @@ def report_show(ctx: click.Context, report_id: str, json_mode: bool | None):
     try:
         data = json.loads(candidate.read_text(encoding="utf-8"))
         result = success_response(data)
-    except Exception as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         result = error_response(
             "REPORT_READ_ERROR",
             f"读取报告失败: {exc}",

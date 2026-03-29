@@ -1,8 +1,11 @@
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import List
+
+from cliany_site.config import get_config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -15,6 +18,8 @@ class ActionStepResult:
     success: bool
     error_message: str | None = None
     timestamp: str | None = None
+    page_url: str = ""
+    elapsed_ms: float = 0.0
 
 
 @dataclass
@@ -29,7 +34,7 @@ class ExecutionReport:
     succeeded_steps: int
     failed_steps: int
     repaired_steps: int
-    step_results: List[ActionStepResult]
+    step_results: list[ActionStepResult]
 
     @property
     def status(self) -> str:
@@ -42,17 +47,15 @@ class ExecutionReport:
             return "failure"
 
 
-REPORTS_DIR = Path.home() / ".cliany-site" / "reports"
-
-
 def save_report(report: ExecutionReport, domain: str) -> str:
     """保存执行报告到文件，返回文件路径"""
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    reports_dir = get_config().reports_dir
+    reports_dir.mkdir(parents=True, exist_ok=True)
     # 将 domain 中的非法文件名字符替换为 _
     safe_domain = domain.replace("/", "_").replace(":", "_")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{safe_domain}_{timestamp}.json"
-    path = REPORTS_DIR / filename
+    path = reports_dir / filename
 
     data = {
         "adapter_domain": report.adapter_domain,
@@ -72,6 +75,8 @@ def save_report(report: ExecutionReport, domain: str) -> str:
                 "success": step.success,
                 "error_message": step.error_message,
                 "timestamp": step.timestamp,
+                "page_url": step.page_url,
+                "elapsed_ms": step.elapsed_ms,
             }
             for step in report.step_results
         ],
@@ -81,13 +86,14 @@ def save_report(report: ExecutionReport, domain: str) -> str:
     return str(path)
 
 
-def list_reports(domain: str | None) -> List[dict]:
+def list_reports(domain: str | None) -> list[dict]:
     """列出指定域名的执行报告，不指定域名则列出所有"""
-    if not REPORTS_DIR.exists():
+    reports_dir = get_config().reports_dir
+    if not reports_dir.exists():
         return []
 
     reports = []
-    for path in REPORTS_DIR.glob("*.json"):
+    for path in reports_dir.glob("*.json"):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             if domain is None or data.get("adapter_domain") == domain:
@@ -105,9 +111,54 @@ def list_reports(domain: str | None) -> List[dict]:
                         "path": str(path),
                     }
                 )
-        except Exception:
+        except (json.JSONDecodeError, OSError, KeyError):
             continue
 
     # 按开始时间倒序排列
     reports.sort(key=lambda x: x["started_at"], reverse=True)
     return reports
+
+
+def save_execution_log(report: ExecutionReport, domain: str) -> str:
+    """保存详细执行日志到 ~/.cliany-site/logs/，返回文件路径"""
+    logs_dir = get_config().logs_dir
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_domain = domain.replace("/", "_").replace(":", "_")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{safe_domain}_{timestamp}.log.json"
+    path = logs_dir / filename
+
+    log_entries = []
+    for step in report.step_results:
+        entry: dict[str, object] = {
+            "step_index": step.step_index,
+            "action_type": step.action_type,
+            "description": step.description,
+            "success": step.success,
+            "timestamp": step.timestamp,
+            "page_url": step.page_url,
+            "elapsed_ms": round(step.elapsed_ms, 2),
+        }
+        if step.error_message:
+            entry["error"] = step.error_message
+        log_entries.append(entry)
+
+    data = {
+        "adapter_domain": report.adapter_domain,
+        "command_name": report.command_name,
+        "started_at": report.started_at,
+        "finished_at": report.finished_at,
+        "status": report.status,
+        "summary": {
+            "total": report.total_steps,
+            "succeeded": report.succeeded_steps,
+            "failed": report.failed_steps,
+            "repaired": report.repaired_steps,
+        },
+        "steps": log_entries,
+    }
+
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.debug("执行日志已保存: %s", path)
+    return str(path)

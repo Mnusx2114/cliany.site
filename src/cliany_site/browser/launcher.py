@@ -1,13 +1,14 @@
 # src/cliany_site/browser/launcher.py
-from pathlib import Path
+import json
+import os
 import shutil
 import subprocess
 import time
-import os
 import urllib.error
 import urllib.request
-import json
-from typing import Optional
+from pathlib import Path
+
+from cliany_site.config import get_config
 
 
 class ChromeNotFoundError(Exception):
@@ -16,7 +17,7 @@ class ChromeNotFoundError(Exception):
     pass
 
 
-def find_chrome_binary() -> Optional[Path]:
+def find_chrome_binary() -> Path | None:
     """查找 Chrome 二进制文件路径（macOS/Linux）"""
     # macOS 路径
     mac_paths = [
@@ -43,26 +44,29 @@ def find_chrome_binary() -> Optional[Path]:
     return None
 
 
-def detect_running_chrome(port: int = 9222) -> Optional[str]:
+def detect_running_chrome(port: int | None = None) -> str | None:
     """检测指定端口是否有运行中的 Chrome，返回 WebSocket URL"""
+    if port is None:
+        port = get_config().cdp_port
     try:
         with urllib.request.urlopen(
-            f"http://localhost:{port}/json/version", timeout=2
+            f"http://localhost:{port}/json/version", timeout=get_config().cdp_timeout
         ) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode())
-                return data.get("webSocketDebuggerUrl")
+                result: str | None = data.get("webSocketDebuggerUrl")
+                return result
     except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
         pass
     return None
 
 
-def launch_chrome(port: int = 9222, headless: bool = False) -> subprocess.Popen:
+def launch_chrome(port: int | None = None, headless: bool = False) -> subprocess.Popen:
+    if port is None:
+        port = get_config().cdp_port
     binary = find_chrome_binary()
     if not binary:
-        raise ChromeNotFoundError(
-            "未找到 Chrome 浏览器，请安装 Chrome 或确认 Chrome 可执行文件在 PATH 中"
-        )
+        raise ChromeNotFoundError("未找到 Chrome 浏览器，请安装 Chrome 或确认 Chrome 可执行文件在 PATH 中")
 
     user_data_dir = f"/tmp/cliany-site-chrome-{os.getpid()}"
 
@@ -92,12 +96,14 @@ def launch_chrome(port: int = 9222, headless: bool = False) -> subprocess.Popen:
     raise TimeoutError(f"Chrome 启动后 10 秒内 CDP 端口 {port} 未就绪")
 
 
-def ensure_chrome(port: int = 9222) -> tuple[str, Optional[subprocess.Popen]]:
+def ensure_chrome(port: int | None = None, headless: bool = False) -> tuple[str, subprocess.Popen | None]:
+    if port is None:
+        port = get_config().cdp_port
     ws_url = detect_running_chrome(port)
     if ws_url:
         return (ws_url, None)
 
-    proc = launch_chrome(port)
+    proc = launch_chrome(port, headless=headless)
     ws_url = detect_running_chrome(port)
     if not ws_url:
         proc.terminate()

@@ -1,14 +1,22 @@
 import asyncio
+import contextlib
 import copy
-import os
+import logging
 import re
+import time
+from datetime import UTC
 from typing import Any, cast
 from urllib.parse import urljoin, urlparse
 
 from cliany_site.browser.axtree import capture_axtree, serialize_axtree
+from cliany_site.config import get_config
+from cliany_site.errors import ClanySiteError
+from cliany_site.progress import NullProgressReporter, ProgressReporter
+
+logger = logging.getLogger(__name__)
 
 
-class ActionExecutionError(Exception):
+class ActionExecutionError(ClanySiteError):
     """操作执行失败时的结构化异常"""
 
     def __init__(
@@ -36,21 +44,32 @@ class ActionExecutionError(Exception):
         }
 
 
-# 导航后等待页面动态内容渲染的时间（秒）
-_POST_NAVIGATE_DELAY = 1.5
-# 点击带 href 的元素后等待页面加载的时间（秒）
-_POST_CLICK_NAV_DELAY = 2.0
-# 新标签页打开后等待加载的时间（秒）
-_NEW_TAB_SETTLE_DELAY = 2.5
-# 元素定位失败后重试前的等待时间（秒）
-_RESOLVE_RETRY_DELAY = 1.0
-# 元素定位最大重试次数
-_RESOLVE_MAX_RETRIES = 2
-_ADAPTIVE_REPAIR_MAX_ATTEMPTS = 3
+def _get_post_navigate_delay() -> float:
+    return get_config().post_navigate_delay
+
+
+def _get_post_click_nav_delay() -> float:
+    return get_config().post_click_nav_delay
+
+
+def _get_new_tab_settle_delay() -> float:
+    return get_config().new_tab_settle_delay
+
+
+def _get_resolve_retry_delay() -> float:
+    return get_config().resolve_retry_delay
+
+
+def _get_resolve_max_retries() -> int:
+    return get_config().resolve_max_retries
+
+
+def _get_adaptive_repair_max_attempts() -> int:
+    return get_config().adaptive_repair_max_attempts
 
 
 def _adaptive_repair_enabled() -> bool:
-    return os.environ.get("CLIANY_ADAPTIVE_REPAIR", "").lower() == "true"
+    return get_config().adaptive_repair_enabled
 
 
 def _normalize_text(value: Any) -> str:
@@ -94,12 +113,7 @@ def normalize_navigation_url(candidate: Any, current_url: str) -> str:
     if parsed.scheme in {"http", "https"} and parsed.netloc:
         return raw
 
-    if (
-        current_url
-        and not parsed.scheme
-        and not parsed.netloc
-        and raw.startswith(("/", "./", "../", "?", "#"))
-    ):
+    if current_url and not parsed.scheme and not parsed.netloc and raw.startswith(("/", "./", "../", "?", "#")):
         absolute_url = urljoin(current_url, raw)
         absolute = urlparse(absolute_url)
         if absolute.scheme in {"http", "https"} and absolute.netloc:
@@ -116,9 +130,7 @@ def _normalize_attr_value(value: Any, current_url: str) -> str:
     return _normalize_text(url_value or value)
 
 
-def substitute_parameters(
-    actions_data: list[dict[str, Any]], params: dict[str, Any]
-) -> list[dict[str, Any]]:
+def substitute_parameters(actions_data: list[dict[str, Any]], params: dict[str, Any]) -> list[dict[str, Any]]:
     substituted = copy.deepcopy(actions_data)
     if not isinstance(params, dict) or not params:
         return substituted
@@ -175,12 +187,8 @@ def _score_candidate(
             "type": 12,
             "role": 10,
         }.items():
-            target_value = _normalize_attr_value(
-                target_attributes.get(key), current_url
-            )
-            candidate_value = _normalize_attr_value(
-                candidate_attributes.get(key), current_url
-            )
+            target_value = _normalize_attr_value(target_attributes.get(key), current_url)
+            candidate_value = _normalize_attr_value(candidate_attributes.get(key), current_url)
             if target_value and candidate_value and target_value == candidate_value:
                 score += weight
 
@@ -219,16 +227,14 @@ def _extract_repair_selector_refs(parsed_response: Any) -> list[str]:
     return normalized
 
 
-async def _attempt_adaptive_repair(
-    browser_session: Any, action_data: dict[str, Any]
-) -> Any | None:
+async def _attempt_adaptive_repair(browser_session: Any, action_data: dict[str, Any]) -> Any | None:
     import importlib
 
     from cliany_site.repair_prompts import REPAIR_PROMPT_TEMPLATE
 
     try:
         engine_module = importlib.import_module("cliany_site.explorer.engine")
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         return None
 
     get_replay_llm = getattr(engine_module, "_get_replay_llm", None)
@@ -244,7 +250,8 @@ async def _attempt_adaptive_repair(
             break
         except TypeError:
             continue
-        except Exception:
+        except (OSError, ValueError, ImportError) as exc:
+            logger.debug("获取 replay LLM 失败: %s", exc)
             return None
 
     if llm is None:
@@ -263,7 +270,7 @@ async def _attempt_adaptive_repair(
     original_ref = str(action_data.get("ref", "") or action_data.get("target_ref", ""))
     attempted_refs: list[str] = [original_ref] if original_ref else []
 
-    for llm_attempt in range(_ADAPTIVE_REPAIR_MAX_ATTEMPTS):
+    for llm_attempt in range(_get_adaptive_repair_max_attempts()):
         tree = await capture_axtree(browser_session)
         selector_map = tree.get("selector_map", {})
 
@@ -300,13 +307,10 @@ async def _attempt_adaptive_repair(
                     raise TypeError("LLM 对象缺少 invoke/ainvoke 接口")
                 response = invoke(prompt_text)
             response_content = getattr(response, "content", response)
-            response_text = (
-                to_text(response_content)
-                if callable(to_text)
-                else str(response_content)
-            )
+            response_text = to_text(response_content) if callable(to_text) else str(response_content)
             parsed = parse_llm_response(response_text)
-        except Exception as exc:
+        except (TypeError, ValueError, RuntimeError, OSError) as exc:
+            logger.debug("自适应修复 LLM 调用失败 (attempt=%d): %s", llm_attempt + 1, exc)
             attempt_record["success"] = False
             attempt_record["error"] = str(exc)
             repair_attempts.append(attempt_record)
@@ -328,7 +332,8 @@ async def _attempt_adaptive_repair(
 
             try:
                 node = await browser_session.get_element_by_index(candidate_index)
-            except Exception:
+            except (IndexError, KeyError, RuntimeError, OSError) as exc:
+                logger.debug("自适应修复: 元素 %s 定位失败: %s", candidate_index, exc)
                 continue
 
             attempt_record["success"] = True
@@ -346,7 +351,7 @@ async def _switch_to_newest_tab(browser_session: Any) -> None:
     import importlib
 
     events_module = importlib.import_module("browser_use.browser.events")
-    SwitchTabEvent = getattr(events_module, "SwitchTabEvent")
+    SwitchTabEvent = events_module.SwitchTabEvent
 
     event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=None))
     await event
@@ -360,15 +365,13 @@ async def _handle_post_click_navigation(
     if _action_opens_new_tab(action_data):
         await asyncio.sleep(0.5)
         await _switch_to_newest_tab(browser_session)
-        await asyncio.sleep(_NEW_TAB_SETTLE_DELAY)
+        await asyncio.sleep(_get_new_tab_settle_delay())
     elif _action_has_href(action_data):
-        await asyncio.sleep(_POST_CLICK_NAV_DELAY)
+        await asyncio.sleep(_get_post_click_nav_delay())
 
 
-async def _resolve_action_node(
-    browser_session: Any, action_data: dict[str, Any]
-) -> Any | None:
-    for attempt in range(_RESOLVE_MAX_RETRIES + 1):
+async def _resolve_action_node(browser_session: Any, action_data: dict[str, Any]) -> Any | None:
+    for attempt in range(_get_resolve_max_retries() + 1):
         tree = await capture_axtree(browser_session)
         selector_map = tree.get("selector_map", {})
         current_url = tree.get("url", "")
@@ -378,12 +381,9 @@ async def _resolve_action_node(
         if direct_index is not None:
             direct_candidate = selector_map.get(str(direct_index))
             if isinstance(direct_candidate, dict):
-                direct_score = _score_candidate(
-                    action_data, direct_candidate, current_url
-                )
+                direct_score = _score_candidate(action_data, direct_candidate, current_url)
                 if direct_score > 0 or not any(
-                    action_data.get(key)
-                    for key in ("target_name", "target_role", "target_attributes")
+                    action_data.get(key) for key in ("target_name", "target_role", "target_attributes")
                 ):
                     return await browser_session.get_element_by_index(direct_index)
 
@@ -402,8 +402,8 @@ async def _resolve_action_node(
         if best_index is not None and best_score > 0:
             return await browser_session.get_element_by_index(best_index)
 
-        if attempt < _RESOLVE_MAX_RETRIES:
-            await asyncio.sleep(_RESOLVE_RETRY_DELAY)
+        if attempt < _get_resolve_max_retries():
+            await asyncio.sleep(_get_resolve_retry_delay())
 
     if _adaptive_repair_enabled():
         repaired = await _attempt_adaptive_repair(browser_session, action_data)
@@ -420,23 +420,34 @@ async def execute_action_steps(
     params: dict[str, Any] | None = None,
     domain: str = "",
     command_name: str = "",
+    progress: ProgressReporter | None = None,
+    start_index: int = 0,
+    dry_run: bool = False,
 ) -> None:
     import importlib
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    from cliany_site.report import ActionStepResult, ExecutionReport, save_report
+    from cliany_site.checkpoint import clear_checkpoint, save_checkpoint
+    from cliany_site.report import ActionStepResult, ExecutionReport, save_execution_log, save_report
 
     events_module = importlib.import_module("browser_use.browser.events")
-    ClickElementEvent = getattr(events_module, "ClickElementEvent")
-    NavigateToUrlEvent = getattr(events_module, "NavigateToUrlEvent")
-    SelectDropdownOptionEvent = getattr(events_module, "SelectDropdownOptionEvent")
-    SendKeysEvent = getattr(events_module, "SendKeysEvent")
-    TypeTextEvent = getattr(events_module, "TypeTextEvent")
+    ClickElementEvent = events_module.ClickElementEvent
+    NavigateToUrlEvent = events_module.NavigateToUrlEvent
+    SelectDropdownOptionEvent = events_module.SelectDropdownOptionEvent
+    SendKeysEvent = events_module.SendKeysEvent
+    TypeTextEvent = events_module.TypeTextEvent
 
-    effective_actions = (
-        substitute_parameters(actions_data, params)
-        if params is not None
-        else actions_data
+    effective_actions = substitute_parameters(actions_data, params) if params is not None else actions_data
+    reporter: ProgressReporter = progress or NullProgressReporter()
+
+    mode_label = "[dry-run] " if dry_run else ""
+    logger.info(
+        "%s开始执行: %d 个动作 domain=%s command=%s start_index=%d",
+        mode_label,
+        len(effective_actions),
+        domain or "(unknown)",
+        command_name or "(default)",
+        start_index,
     )
 
     resolved_domain = domain
@@ -447,12 +458,15 @@ async def execute_action_steps(
                 if _url:
                     try:
                         resolved_domain = urlparse(_url).netloc or _url
-                    except Exception:
+                    except (ValueError, AttributeError):
                         resolved_domain = _url
                     break
 
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     step_results: list[ActionStepResult] = []
+    completed_indices: list[int] = []
+    execute_start = time.monotonic()
+    reporter.on_execute_start(len(effective_actions), resolved_domain, command_name)
 
     try:
         for idx, action_data in enumerate(effective_actions):
@@ -463,15 +477,59 @@ async def execute_action_steps(
             if action_type not in ("click", "type", "select", "navigate", "submit"):
                 continue
 
-            step_success = True
-            step_error: str | None = None
+            if idx < start_index:
+                logger.debug("跳过已完成步骤 %d (start_index=%d)", idx, start_index)
+                completed_indices.append(idx)
+                continue
+
+            step_start = time.monotonic()
+            step_page_url = ""
+            logger.debug(
+                "%s步骤 %d/%d: type=%s desc=%s",
+                mode_label,
+                idx + 1,
+                len(effective_actions),
+                action_type,
+                action_data.get("description", ""),
+            )
+            reporter.on_execute_step_start(
+                idx, len(effective_actions), action_type, str(action_data.get("description", action_type))
+            )
 
             try:
-                if action_type == "navigate":
-                    current_url = await browser_session.get_current_page_url()
-                    nav_url = normalize_navigation_url(
-                        action_data.get("url", ""), current_url
-                    )
+                try:
+                    step_page_url = await browser_session.get_current_page_url()
+                except Exception:
+                    step_page_url = ""
+
+                if dry_run:
+                    if action_type == "navigate":
+                        current_url = step_page_url
+                        nav_url = normalize_navigation_url(action_data.get("url", ""), current_url)
+                        if not nav_url:
+                            raise ActionExecutionError(
+                                error_type="invalid_url",
+                                action_index=idx,
+                                action=action_data,
+                                message=f"[dry-run] 无效导航 URL: {action_data.get('url', '')}",
+                                suggestion="URL 可能已变更，建议重新 explore",
+                            )
+                        logger.debug("[dry-run] navigate → %s (验证通过)", nav_url)
+                    else:
+                        node = await _resolve_action_node(browser_session, action_data)
+                        if node is None and action_type != "submit":
+                            raise ActionExecutionError(
+                                error_type="element_not_found",
+                                action_index=idx,
+                                action=action_data,
+                                message=f"[dry-run] 未找到目标元素: {action_data.get('description', action_type)}",
+                                suggestion="目标元素可能已更名或移除，建议重新 explore",
+                            )
+                        logger.debug("[dry-run] %s → 元素已定位 (验证通过)", action_type)
+
+                elif action_type == "navigate":
+                    current_url = step_page_url
+                    nav_url = normalize_navigation_url(action_data.get("url", ""), current_url)
                     if not nav_url:
                         raise ActionExecutionError(
                             error_type="invalid_url",
@@ -488,33 +546,19 @@ async def execute_action_steps(
                         )
                     )
                     await event
-                    await event.event_result(
-                        raise_if_any=not continue_on_error, raise_if_none=False
-                    )
-                    await asyncio.sleep(_POST_NAVIGATE_DELAY)
+                    await event.event_result(raise_if_any=not continue_on_error, raise_if_none=False)
+                    await asyncio.sleep(_get_post_navigate_delay())
 
                 elif action_type == "submit":
-                    submit_node = await _resolve_action_node(
-                        browser_session, action_data
-                    )
+                    submit_node = await _resolve_action_node(browser_session, action_data)
                     if submit_node is not None:
-                        event = browser_session.event_bus.dispatch(
-                            ClickElementEvent(node=submit_node)
-                        )
+                        event = browser_session.event_bus.dispatch(ClickElementEvent(node=submit_node))
                     else:
-                        event = browser_session.event_bus.dispatch(
-                            SendKeysEvent(keys="Enter")
-                        )
+                        event = browser_session.event_bus.dispatch(SendKeysEvent(keys="Enter"))
                     await event
-                    await event.event_result(
-                        raise_if_any=not continue_on_error, raise_if_none=False
-                    )
-                    if _action_has_href(action_data) or _action_opens_new_tab(
-                        action_data
-                    ):
-                        await _handle_post_click_navigation(
-                            browser_session, action_data
-                        )
+                    await event.event_result(raise_if_any=not continue_on_error, raise_if_none=False)
+                    if _action_has_href(action_data) or _action_opens_new_tab(action_data):
+                        await _handle_post_click_navigation(browser_session, action_data)
 
                 else:
                     node = await _resolve_action_node(browser_session, action_data)
@@ -528,51 +572,48 @@ async def execute_action_steps(
                         )
 
                     if action_type == "click":
-                        event = browser_session.event_bus.dispatch(
-                            ClickElementEvent(node=node)
-                        )
+                        event = browser_session.event_bus.dispatch(ClickElementEvent(node=node))
                         await event
-                        await event.event_result(
-                            raise_if_any=not continue_on_error, raise_if_none=False
-                        )
-                        await _handle_post_click_navigation(
-                            browser_session, action_data
-                        )
+                        await event.event_result(raise_if_any=not continue_on_error, raise_if_none=False)
+                        await _handle_post_click_navigation(browser_session, action_data)
                     elif action_type == "type":
                         value = action_data.get("value", "")
                         if isinstance(value, str):
-                            event = browser_session.event_bus.dispatch(
-                                TypeTextEvent(node=node, text=value, clear=True)
-                            )
+                            event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=value, clear=True))
                             await event
-                            await event.event_result(
-                                raise_if_any=not continue_on_error, raise_if_none=False
-                            )
+                            await event.event_result(raise_if_any=not continue_on_error, raise_if_none=False)
                     elif action_type == "select":
                         value = action_data.get("value", "")
                         if isinstance(value, str) and value:
-                            event = browser_session.event_bus.dispatch(
-                                SelectDropdownOptionEvent(node=node, text=value)
-                            )
+                            event = browser_session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=value))
                             await event
-                            await event.event_result(
-                                raise_if_any=not continue_on_error, raise_if_none=False
-                            )
+                            await event.event_result(raise_if_any=not continue_on_error, raise_if_none=False)
 
             except Exception as exc:
-                step_success = False
-                step_error = str(exc)
+                logger.warning("%s步骤 %d (%s) 执行失败: %s", mode_label, idx, action_type, exc)
+                step_elapsed_err = (time.monotonic() - step_start) * 1000
                 step_results.append(
                     ActionStepResult(
                         step_index=idx,
                         action_type=action_type,
                         description=str(action_data.get("description", action_type)),
                         success=False,
-                        error_message=step_error,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        error_message=str(exc),
+                        timestamp=datetime.now(UTC).isoformat(),
+                        page_url=step_page_url,
+                        elapsed_ms=step_elapsed_err,
                     )
                 )
-                if not continue_on_error:
+                reporter.on_execute_step_done(idx, len(effective_actions), False, step_elapsed_err, str(exc))
+
+                if not continue_on_error and not dry_run:
+                    if resolved_domain and command_name:
+                        try:
+                            save_checkpoint(resolved_domain, command_name, actions_data, completed_indices, params)
+                            logger.info("断点已保存，可使用 --resume 继续执行")
+                        except (OSError, ValueError, TypeError) as ckpt_exc:
+                            logger.debug("保存断点失败: %s", ckpt_exc)
+
                     if isinstance(exc, ActionExecutionError):
                         raise
                     raise ActionExecutionError(
@@ -581,25 +622,42 @@ async def execute_action_steps(
                         action=action_data,
                         message=str(exc),
                         suggestion="操作执行异常，建议检查页面状态或重新 explore",
-                    )
+                    ) from exc
                 continue
 
+            step_elapsed = (time.monotonic() - step_start) * 1000
             step_results.append(
                 ActionStepResult(
                     step_index=idx,
                     action_type=action_type,
                     description=str(action_data.get("description", action_type)),
-                    success=step_success,
-                    error_message=step_error,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    success=True,
+                    error_message=None,
+                    timestamp=datetime.now(UTC).isoformat(),
+                    page_url=step_page_url,
+                    elapsed_ms=step_elapsed,
                 )
             )
+            completed_indices.append(idx)
+            reporter.on_execute_step_done(idx, len(effective_actions), True, step_elapsed)
+            logger.debug("%s步骤 %d 完成: 耗时 %.0fms", mode_label, idx + 1, step_elapsed)
 
     finally:
+        total_execute_elapsed = (time.monotonic() - execute_start) * 1000
+        succeeded = sum(1 for s in step_results if s.success)
+        failed = sum(1 for s in step_results if not s.success)
+        reporter.on_execute_done(succeeded, failed, len(step_results), total_execute_elapsed)
+
         if resolved_domain:
-            finished_at = datetime.now(timezone.utc).isoformat()
-            succeeded = sum(1 for s in step_results if s.success)
-            failed = sum(1 for s in step_results if not s.success)
+            finished_at = datetime.now(UTC).isoformat()
+            logger.info(
+                "%s执行完成: 成功=%d 失败=%d 总计=%d domain=%s",
+                mode_label,
+                succeeded,
+                failed,
+                len(step_results),
+                resolved_domain,
+            )
             report = ExecutionReport(
                 adapter_domain=resolved_domain,
                 command_name=command_name,
@@ -613,5 +671,13 @@ async def execute_action_steps(
             )
             try:
                 save_report(report, resolved_domain)
-            except Exception:
-                pass
+            except (OSError, ValueError, TypeError) as exc:
+                logger.debug("保存执行报告失败: %s", exc)
+            try:
+                save_execution_log(report, resolved_domain)
+            except (OSError, ValueError, TypeError) as exc:
+                logger.debug("保存执行日志失败: %s", exc)
+
+            if failed == 0 and resolved_domain and command_name:
+                with contextlib.suppress(OSError, ValueError, TypeError):
+                    clear_checkpoint(resolved_domain, command_name)

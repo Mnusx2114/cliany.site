@@ -1,25 +1,26 @@
+import contextlib
 import importlib.util
 import json
+import logging
 import sys
-import warnings
-from pathlib import Path
 from typing import Any
 
 import click
 
 from cliany_site.codegen.generator import METADATA_SCHEMA_VERSION
+from cliany_site.config import get_config
 
-
-ADAPTERS_DIR = Path.home() / ".cliany-site" / "adapters"
+logger = logging.getLogger(__name__)
 
 
 def discover_adapters() -> list[dict[str, Any]]:
     """扫描 ~/.cliany-site/adapters/ 目录，返回所有已安装的 adapter 信息"""
-    adapters = []
-    if not ADAPTERS_DIR.exists():
+    adapters_dir = get_config().adapters_dir
+    adapters: list[dict[str, Any]] = []
+    if not adapters_dir.exists():
         return adapters
 
-    for adapter_dir in sorted(ADAPTERS_DIR.iterdir()):
+    for adapter_dir in sorted(adapters_dir.iterdir()):
         if not adapter_dir.is_dir():
             continue
         commands_py = adapter_dir / "commands.py"
@@ -30,10 +31,8 @@ def discover_adapters() -> list[dict[str, Any]]:
         metadata = {}
         metadata_path = adapter_dir / "metadata.json"
         if metadata_path.exists():
-            try:
+            with contextlib.suppress(json.JSONDecodeError, OSError):
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
 
         commands_list = metadata.get("commands", [])
         command_count = len(commands_list) if isinstance(commands_list, list) else 0
@@ -56,7 +55,7 @@ def discover_adapters() -> list[dict[str, Any]]:
 
 def load_adapter(domain: str) -> click.Group | None:
     """动态导入指定 domain 的 commands.py，返回其 Click 命令组，失败返回 None"""
-    adapter_dir = ADAPTERS_DIR / domain
+    adapter_dir = get_config().adapters_dir / domain
     commands_py = adapter_dir / "commands.py"
 
     if not commands_py.exists():
@@ -79,8 +78,8 @@ def load_adapter(domain: str) -> click.Group | None:
         if not isinstance(cli_group, click.Group):
             return None
         return cli_group
-    except Exception as exc:
-        warnings.warn(f"加载 adapter '{domain}' 失败: {exc}", stacklevel=2)
+    except (ImportError, SyntaxError, OSError, json.JSONDecodeError) as exc:
+        logger.warning("加载 adapter '%s' 失败: %s", domain, exc)
         return None
 
 
@@ -91,9 +90,8 @@ def register_adapters(main_cli: click.Group) -> None:
         try:
             group = load_adapter(domain)
             if group is not None:
-                # 将 adapter 的命令组以 domain 为名注册为子命令
-                # 设置 name 确保使用 domain 作为命令名（而非 adapter 内部的 group 名）
                 group.name = domain
                 main_cli.add_command(group, name=domain)
-        except Exception as exc:
-            warnings.warn(f"注册 adapter '{domain}' 失败: {exc}", stacklevel=2)
+                logger.debug("已注册 adapter: %s", domain)
+        except (ImportError, SyntaxError, OSError) as exc:
+            logger.warning("注册 adapter '%s' 失败: %s", domain, exc)

@@ -2,11 +2,11 @@ import asyncio
 import json
 import os
 import sys
-from pathlib import Path
 from urllib.parse import urlparse
 
 import click
 
+from cliany_site.config import get_config
 from cliany_site.errors import CDP_UNAVAILABLE, EXECUTION_FAILED, LLM_UNAVAILABLE
 from cliany_site.response import error_response, print_response, success_response
 
@@ -14,9 +14,7 @@ from cliany_site.response import error_response, print_response, success_respons
 @click.command("explore")
 @click.argument("url")
 @click.argument("workflow_description")
-@click.option(
-    "--force", is_flag=True, default=False, help="覆盖已有的 adapter（无需确认）"
-)
+@click.option("--force", is_flag=True, default=False, help="覆盖已有的 adapter（无需确认）")
 @click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")
 @click.pass_context
 def explore_cmd(
@@ -29,12 +27,10 @@ def explore_cmd(
     """探索网站工作流并生成 CLI adapter"""
     root_ctx = ctx.find_root()
     root_obj = root_ctx.obj if isinstance(root_ctx.obj, dict) else {}
-    effective_json_mode = (
-        json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
-    )
+    effective_json_mode = json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
 
     async def _run():
-        from cliany_site.browser.cdp import CDPConnection
+        from cliany_site.browser.cdp import cdp_from_context
         from cliany_site.codegen.generator import (
             AdapterGenerator,
             _safe_domain,
@@ -49,7 +45,7 @@ def explore_cmd(
 
         _load_dotenv()
 
-        cdp = CDPConnection()
+        cdp = cdp_from_context(ctx)
         if not await cdp.check_available():
             return error_response(
                 CDP_UNAVAILABLE,
@@ -65,12 +61,8 @@ def explore_cmd(
                 "请将 CLIANY_LLM_PROVIDER 设置为 anthropic 或 openai",
             )
 
-        has_anthropic_key = bool(
-            os.getenv("CLIANY_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
-        )
-        has_openai_key = bool(
-            os.getenv("CLIANY_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        )
+        has_anthropic_key = bool(os.getenv("CLIANY_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY"))
+        has_openai_key = bool(os.getenv("CLIANY_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"))
 
         if provider == "anthropic" and not has_anthropic_key:
             return error_response(
@@ -89,7 +81,7 @@ def explore_cmd(
         if provider == "openai":
             try:
                 _normalize_openai_base_url(os.getenv("CLIANY_OPENAI_BASE_URL"))
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 return error_response(
                     LLM_UNAVAILABLE,
                     f"OpenAI base URL 配置无效: {e}",
@@ -107,10 +99,16 @@ def explore_cmd(
         else:
             print(f"[explore] 正在探索: {url}", file=sys.stderr)
 
+        from cliany_site.progress import NdjsonProgressReporter, RichProgressReporter
+
+        reporter = NdjsonProgressReporter() if effective_json_mode else RichProgressReporter()
+
         try:
-            explorer = WorkflowExplorer()
-            explore_result = await explorer.explore(url, workflow_description)
-        except Exception as e:
+            cdp_url = root_obj.get("cdp_url")
+            headless = root_obj.get("headless", False)
+            explorer = WorkflowExplorer(cdp_url=cdp_url, headless=headless)
+            explore_result = await explorer.explore(url, workflow_description, progress=reporter)
+        except (OSError, RuntimeError, ValueError) as e:
             return error_response(
                 EXECUTION_FAILED,
                 f"探索失败: {e}",
@@ -125,11 +123,7 @@ def explore_cmd(
         }
 
         try:
-            reuse_count = sum(
-                1
-                for action in explore_result.actions
-                if action.action_type == "reuse_atom"
-            )
+            reuse_count = sum(1 for action in explore_result.actions if action.action_type == "reuse_atom")
             post_analysis["atoms_reused"] = reuse_count
 
             from cliany_site.explorer.analyzer import AtomExtractor
@@ -150,15 +144,14 @@ def explore_cmd(
         ):
             pass
 
+        print(f"[explore] 发现 {len(explore_result.commands)} 个命令建议", file=sys.stderr)
         print(
-            f"[explore] 发现 {len(explore_result.commands)} 个命令建议", file=sys.stderr
-        )
-        print(
-            f"[explore] 后分析: 提取 {post_analysis['atoms_extracted']} 个原子, 复用 {post_analysis['atoms_reused']} 个原子",
+            f"[explore] 后分析: 提取 {post_analysis['atoms_extracted']} 个原子, "
+            f"复用 {post_analysis['atoms_reused']} 个原子",
             file=sys.stderr,
         )
 
-        adapter_dir = Path.home() / ".cliany-site" / "adapters" / _safe_domain(domain)
+        adapter_dir = get_config().adapters_dir / _safe_domain(domain)
 
         from cliany_site.activity_log import write_log
 
@@ -169,9 +162,7 @@ def explore_cmd(
                 "source_url": url,
                 "workflow": workflow_description,
             }
-            adapter_path = save_adapter(
-                domain, code, metadata, explore_result=explore_result
-            )
+            adapter_path = save_adapter(domain, code, metadata, explore_result=explore_result)
             commands_list = [cmd.name for cmd in explore_result.commands]
             print(f"[explore] Adapter 已生成: {adapter_path}", file=sys.stderr)
             write_log(

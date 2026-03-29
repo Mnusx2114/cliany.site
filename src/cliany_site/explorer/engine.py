@@ -1,7 +1,10 @@
-import json
+import contextlib
 import importlib
+import json
+import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -9,6 +12,7 @@ from urllib.parse import urlparse
 from cliany_site.action_runtime import execute_action_steps, normalize_navigation_url
 from cliany_site.browser.axtree import capture_axtree, serialize_axtree
 from cliany_site.browser.cdp import CDPConnection
+from cliany_site.config import get_config
 from cliany_site.explorer.models import (
     ActionStep,
     CommandSuggestion,
@@ -20,8 +24,9 @@ from cliany_site.explorer.prompts import (
     SYSTEM_PROMPT,
     build_atom_inventory_section,
 )
+from cliany_site.progress import NullProgressReporter, ProgressReporter
 
-MAX_STEPS = 10
+logger = logging.getLogger(__name__)
 
 
 def _to_snake_case(value: str) -> str:
@@ -163,16 +168,12 @@ def _load_dotenv() -> None:
     env_files: list[Path] = []
 
     # XDG 标准用户配置目录（最高用户优先级）
-    xdg_env = (
-        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-        / "cliany-site"
-        / ".env"
-    )
+    xdg_env = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "cliany-site" / ".env"
     if xdg_env.is_file():
         env_files.append(xdg_env)
 
     # 旧版用户配置目录（向后兼容）
-    user_env = Path.home() / ".cliany-site" / ".env"
+    user_env = get_config().home_dir / ".env"
     if user_env.is_file():
         env_files.append(user_env)
 
@@ -204,9 +205,7 @@ def _normalize_openai_base_url(base_url: str | None) -> str | None:
 
     parsed = urlparse(normalized)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise EnvironmentError(
-            "CLIANY_OPENAI_BASE_URL 格式无效，请使用 http(s)://host[:port][/v1]"
-        )
+        raise OSError("CLIANY_OPENAI_BASE_URL 格式无效，请使用 http(s)://host[:port][/v1]")
 
     path = parsed.path.rstrip("/")
     if path in {"", "/"}:
@@ -222,42 +221,34 @@ def _get_llm(role: str = "explore"):
     role_upper = role.upper()
 
     provider = (
-        os.environ.get(f"CLIANY_{role_upper}_LLM_PROVIDER")
-        or os.environ.get("CLIANY_LLM_PROVIDER", "anthropic")
+        os.environ.get(f"CLIANY_{role_upper}_LLM_PROVIDER") or os.environ.get("CLIANY_LLM_PROVIDER", "anthropic")
     ).lower()
 
     if provider == "openai":
-        api_key = os.environ.get(
-            f"CLIANY_{role_upper}_OPENAI_API_KEY"
-        ) or os.environ.get("CLIANY_OPENAI_API_KEY")
+        api_key = os.environ.get(f"CLIANY_{role_upper}_OPENAI_API_KEY") or os.environ.get("CLIANY_OPENAI_API_KEY")
         if not api_key:
-            raise EnvironmentError("请设置 CLIANY_OPENAI_API_KEY 环境变量")
+            raise OSError("请设置 CLIANY_OPENAI_API_KEY 环境变量")
         model = os.environ.get(f"CLIANY_{role_upper}_OPENAI_MODEL") or os.environ.get(
             "CLIANY_OPENAI_MODEL", "gpt-4o-mini"
         )
         base_url = _normalize_openai_base_url(
-            os.environ.get(f"CLIANY_{role_upper}_OPENAI_BASE_URL")
-            or os.environ.get("CLIANY_OPENAI_BASE_URL")
+            os.environ.get(f"CLIANY_{role_upper}_OPENAI_BASE_URL") or os.environ.get("CLIANY_OPENAI_BASE_URL")
         )
         try:
             chat_openai = importlib.import_module("langchain_openai")
-            ChatOpenAI = getattr(chat_openai, "ChatOpenAI")
+            ChatOpenAI = chat_openai.ChatOpenAI
             kwargs: dict = {"model": model, "temperature": 0, "api_key": api_key}
             if base_url:
                 kwargs["base_url"] = base_url
 
             json_mode_kwargs = dict(kwargs)
-            json_mode_kwargs["model_kwargs"] = {
-                "response_format": {"type": "json_object"}
-            }
+            json_mode_kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
             try:
                 return ChatOpenAI(**json_mode_kwargs)
-            except Exception:
+            except (TypeError, ValueError):
                 return ChatOpenAI(**kwargs)
-        except ImportError:
-            raise EnvironmentError(
-                "请安装 langchain-openai: pip install langchain-openai"
-            )
+        except ImportError as exc:
+            raise OSError("请安装 langchain-openai: pip install langchain-openai") from exc
     elif provider == "anthropic":
         api_key = (
             os.environ.get(f"CLIANY_{role_upper}_ANTHROPIC_API_KEY")
@@ -265,28 +256,24 @@ def _get_llm(role: str = "explore"):
             or os.environ.get("ANTHROPIC_API_KEY")
         )
         if not api_key:
-            raise EnvironmentError(
-                "请设置 CLIANY_ANTHROPIC_API_KEY 环境变量（或旧版 ANTHROPIC_API_KEY）"
-            )
-        model = os.environ.get(
-            f"CLIANY_{role_upper}_ANTHROPIC_MODEL"
-        ) or os.environ.get("CLIANY_ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
-        base_url = os.environ.get(
-            f"CLIANY_{role_upper}_ANTHROPIC_BASE_URL"
-        ) or os.environ.get("CLIANY_ANTHROPIC_BASE_URL")
+            raise OSError("请设置 CLIANY_ANTHROPIC_API_KEY 环境变量（或旧版 ANTHROPIC_API_KEY）")
+        model = os.environ.get(f"CLIANY_{role_upper}_ANTHROPIC_MODEL") or os.environ.get(
+            "CLIANY_ANTHROPIC_MODEL", "claude-3-5-haiku-20241022"
+        )
+        base_url = os.environ.get(f"CLIANY_{role_upper}_ANTHROPIC_BASE_URL") or os.environ.get(
+            "CLIANY_ANTHROPIC_BASE_URL"
+        )
         try:
             chat_anthropic = importlib.import_module("langchain_anthropic")
-            ChatAnthropic = getattr(chat_anthropic, "ChatAnthropic")
+            ChatAnthropic = chat_anthropic.ChatAnthropic
             kwargs = {"model": model, "temperature": 0, "api_key": api_key}
             if base_url:
                 kwargs["base_url"] = base_url
             return ChatAnthropic(**kwargs)
-        except ImportError:
-            raise EnvironmentError(
-                "请安装 langchain-anthropic: pip install langchain-anthropic"
-            )
+        except ImportError as exc:
+            raise OSError("请安装 langchain-anthropic: pip install langchain-anthropic") from exc
 
-    raise EnvironmentError("CLIANY_LLM_PROVIDER 仅支持 anthropic 或 openai")
+    raise OSError("CLIANY_LLM_PROVIDER 仅支持 anthropic 或 openai")
 
 
 def _get_replay_llm():
@@ -301,8 +288,9 @@ def _parse_llm_response(text: str) -> dict:
     if match:
         text = match.group(0)
     try:
-        return json.loads(text)
-    except Exception:
+        result: dict[Any, Any] = json.loads(text)
+        return result
+    except (json.JSONDecodeError, ValueError):
         return {
             "done": True,
             "actions": [],
@@ -365,22 +353,35 @@ def _sanitize_actions_data(actions_data: Any, current_url: str) -> list[dict[str
 
 
 class WorkflowExplorer:
-    def __init__(self):
+    def __init__(
+        self,
+        cdp_url: str | None = None,
+        headless: bool | None = None,
+    ):
         self._cdp: CDPConnection | None = None
+        self._cdp_url = cdp_url
+        self._headless = headless
 
     async def explore(
         self,
         url: str,
         workflow_description: str,
-        port: int = 9222,
+        port: int | None = None,
+        progress: ProgressReporter | None = None,
     ) -> ExploreResult:
+        cfg = get_config()
+        if port is None:
+            port = cfg.cdp_port
+        reporter: ProgressReporter = progress or NullProgressReporter()
+        explore_start = time.monotonic()
+        logger.info("开始探索: url=%s workflow=%s", url, workflow_description)
+
         result = ExploreResult()
         llm = _get_llm(role="explore")
-        result.explore_model = (
-            getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
-        )
+        result.explore_model = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
+        logger.debug("LLM provider=%s model=%s", type(llm).__name__, result.explore_model)
 
-        self._cdp = CDPConnection()
+        self._cdp = CDPConnection(cdp_url=self._cdp_url, headless=self._headless)
         if not await self._cdp.check_available(port):
             raise ConnectionError(f"Chrome CDP 不可用 (port={port})")
 
@@ -388,11 +389,15 @@ class WorkflowExplorer:
 
         try:
             await browser_session.navigate_to(url, new_tab=False)
+            reporter.on_explore_start(url, workflow_description, cfg.explore_max_steps)
 
             completed_steps: list[str] = []
             completed_steps_text = "（无）"
+            final_step_count = 0
 
-            for _ in range(MAX_STEPS):
+            for step_num in range(cfg.explore_max_steps):
+                step_start = time.monotonic()
+                reporter.on_explore_step_start(step_num, cfg.explore_max_steps)
                 tree = await capture_axtree(browser_session)
                 selector_map = tree.get("selector_map") or {}
                 page_info = PageInfo(
@@ -419,18 +424,22 @@ class WorkflowExplorer:
                     prompt_text = f"{prompt_text}\n\n{atom_inventory}"
 
                 try:
+                    logger.debug("步骤 %d: 调用 LLM (page=%s)", step_num + 1, tree.get("url", ""))
+                    reporter.on_explore_llm_start(step_num)
                     response = await llm.ainvoke(f"{SYSTEM_PROMPT}\n\n{prompt_text}")
+                    logger.debug("步骤 %d: LLM 响应已收到", step_num + 1)
                 except AttributeError as e:
                     if "model_dump" in str(e):
                         raise RuntimeError(
-                            "OpenAI 兼容接口返回格式异常；若使用代理，请将 CLIANY_OPENAI_BASE_URL 配置为包含 /v1 的地址（例如 https://sub2api.chinahrt.com/v1）"
+                            "OpenAI 兼容接口返回格式异常；若使用代理，"
+                            "请将 CLIANY_OPENAI_BASE_URL 配置为包含 /v1 的地址"
+                            "（例如 https://sub2api.chinahrt.com/v1）"
                         ) from e
                     raise
                 parsed = _parse_llm_response(_to_text(response.content))
 
-                actions_data = _sanitize_actions_data(
-                    parsed.get("actions", []), tree.get("url", "")
-                )
+                actions_data = _sanitize_actions_data(parsed.get("actions", []), tree.get("url", ""))
+                reporter.on_explore_llm_done(step_num, len(actions_data))
 
                 for action_data in actions_data:
                     if not isinstance(action_data, dict):
@@ -468,9 +477,7 @@ class WorkflowExplorer:
                             description=action_data.get("description", ""),
                             target_name=str(selector.get("name", "") or ""),
                             target_role=str(selector.get("role", "") or ""),
-                            target_attributes=dict(
-                                selector.get("attributes", {}) or {}
-                            ),
+                            target_attributes=dict(selector.get("attributes", {}) or {}),
                         )
                     result.actions.append(action)
 
@@ -479,15 +486,26 @@ class WorkflowExplorer:
                         completed_steps.append(description)
 
                 if completed_steps:
-                    completed_steps_text = "\n".join(
-                        f"{i + 1}. {desc}" for i, desc in enumerate(completed_steps)
-                    )
+                    completed_steps_text = "\n".join(f"{i + 1}. {desc}" for i, desc in enumerate(completed_steps))
 
-                await execute_action_steps(
-                    browser_session, actions_data, continue_on_error=True
+                await execute_action_steps(browser_session, actions_data, continue_on_error=True)
+                step_elapsed = (time.monotonic() - step_start) * 1000
+                reporter.on_explore_step_done(step_num, len(actions_data), step_elapsed)
+                logger.info(
+                    "步骤 %d 完成: %d 个动作, 耗时 %.0fms",
+                    step_num + 1,
+                    len(actions_data),
+                    step_elapsed,
                 )
 
                 if parsed.get("done", False):
+                    logger.info(
+                        "探索完成: 共 %d 步, %d 个动作, %d 个命令",
+                        step_num + 1,
+                        len(result.actions),
+                        len(parsed.get("commands", [])),
+                    )
+                    final_step_count = step_num + 1
                     commands_data = parsed.get("commands", [])
                     if not isinstance(commands_data, list):
                         commands_data = []
@@ -504,16 +522,13 @@ class WorkflowExplorer:
                             action_steps = [
                                 idx
                                 for idx in raw_action_steps
-                                if isinstance(idx, int)
-                                and 0 <= idx < len(result.actions)
+                                if isinstance(idx, int) and 0 <= idx < len(result.actions)
                             ]
                         else:
                             action_steps = []  # will be fixed in validation below
 
                         cmd = CommandSuggestion(
-                            name=cmd_data.get(
-                                "name", f"command-{len(result.commands) + 1}"
-                            ),
+                            name=cmd_data.get("name", f"command-{len(result.commands) + 1}"),
                             description=cmd_data.get("description", ""),
                             args=args,
                             action_steps=action_steps,
@@ -522,13 +537,9 @@ class WorkflowExplorer:
 
                     for cmd in result.commands:
                         if not cmd.args:
-                            cmd.args = _infer_params_from_actions(
-                                result.actions, workflow_description
-                            )
+                            cmd.args = _infer_params_from_actions(result.actions, workflow_description)
                         if cmd.name in _GENERIC_COMMAND_NAMES:
-                            better = _infer_command_name_from_description(
-                                cmd.description or workflow_description
-                            )
+                            better = _infer_command_name_from_description(cmd.description or workflow_description)
                             if better:
                                 cmd.name = better
 
@@ -540,9 +551,7 @@ class WorkflowExplorer:
                     if assigned_indices != all_action_indices:
                         # LLM didn't provide valid partitioning — fall back
                         if len(result.commands) == 1:
-                            result.commands[0].action_steps = list(
-                                range(len(result.actions))
-                            )
+                            result.commands[0].action_steps = list(range(len(result.actions)))
                         else:
                             total = len(result.actions)
                             n_cmds = len(result.commands)
@@ -555,23 +564,14 @@ class WorkflowExplorer:
 
                     break
 
-                next_url = normalize_navigation_url(
-                    parsed.get("next_url", ""), tree.get("url", "")
-                )
+                next_url = normalize_navigation_url(parsed.get("next_url", ""), tree.get("url", ""))
                 if next_url and next_url != tree.get("url", ""):
-                    try:
+                    with contextlib.suppress(OSError, RuntimeError, TimeoutError):
                         await browser_session.navigate_to(next_url, new_tab=False)
-                    except Exception:
-                        pass
 
             if not result.commands and result.actions:
-                inferred_args = _infer_params_from_actions(
-                    result.actions, workflow_description
-                )
-                fallback_name = (
-                    _infer_command_name_from_description(workflow_description)
-                    or "run-workflow"
-                )
+                inferred_args = _infer_params_from_actions(result.actions, workflow_description)
+                fallback_name = _infer_command_name_from_description(workflow_description) or "run-workflow"
                 result.commands.append(
                     CommandSuggestion(
                         name=fallback_name,
@@ -584,4 +584,17 @@ class WorkflowExplorer:
             if self._cdp is not None:
                 await self._cdp.disconnect()
 
+        total_elapsed = (time.monotonic() - explore_start) * 1000
+        reporter.on_explore_done(
+            total_steps=final_step_count,
+            total_actions=len(result.actions),
+            total_commands=len(result.commands),
+            elapsed_ms=total_elapsed,
+        )
+        logger.info(
+            "探索结束: %d 个动作, %d 个命令, 总耗时 %.0fms",
+            len(result.actions),
+            len(result.commands),
+            total_elapsed,
+        )
         return result

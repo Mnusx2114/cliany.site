@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
-from pathlib import Path
+import time
+from datetime import UTC, datetime
 from typing import Any
 
-from cliany_site.atoms.models import AtomCommand, AtomParameter
+from cliany_site.atoms.models import AtomCommand
 from cliany_site.atoms.storage import load_atom, load_atoms
-from cliany_site.explorer.models import ActionStep, CommandSuggestion, ExploreResult
+from cliany_site.codegen.naming import (
+    sanitize_docstring_text,
+    sanitize_inline_text,
+    to_command_name,
+    to_function_name,
+    to_parameter_name,
+    unique_parameter_name,
+)
+from cliany_site.codegen.templates import render_atom_command, render_command_block, render_empty_command_block
+from cliany_site.config import get_config
+from cliany_site.explorer.models import ActionStep, ExploreResult
 
 METADATA_SCHEMA_VERSION = "1"
+
+logger = logging.getLogger(__name__)
 
 
 class AdapterGenerator:
@@ -20,8 +33,14 @@ class AdapterGenerator:
         self.domain = domain
 
     def generate(self, explore_result: ExploreResult, domain: str) -> str:
-        """将探索结果生成为可执行的 Python/Click 模块代码字符串"""
-        generated_at = datetime.now(timezone.utc).isoformat()
+        gen_start = time.monotonic()
+        logger.info(
+            "开始生成 adapter: domain=%s actions=%d commands=%d",
+            domain,
+            len(explore_result.actions),
+            len(explore_result.commands),
+        )
+        generated_at = datetime.now(UTC).isoformat()
         domain_doc = self._sanitize_docstring_text(domain)
         source_url = self._extract_source_url(explore_result)
         workflow_description = self._infer_workflow_description(explore_result)
@@ -29,27 +48,20 @@ class AdapterGenerator:
 
         has_reuse_atom = self._has_reuse_atom_actions(explore_result)
         has_parameterized_args = any(cmd.args for cmd in explore_result.commands)
-        has_param_placeholders = any(
-            re.search(r"\{\{\w+\}\}", action.value or "")
-            for action in explore_result.actions
-        )
+        has_param_placeholders = any(re.search(r"\{\{\w+\}\}", action.value or "") for action in explore_result.actions)
 
         command_blocks: list[str] = []
         for index, command in enumerate(explore_result.commands):
-            command_blocks.append(
-                self._render_command_block(command, explore_result.actions, index)
-            )
+            command_blocks.append(render_command_block(command, explore_result.actions, index))
 
         if not command_blocks:
-            command_blocks.append(self._render_empty_command_block())
+            command_blocks.append(render_empty_command_block())
 
         commands_text = "\n\n".join(command_blocks)
 
         substitute_import = ""
         if (has_parameterized_args or has_param_placeholders) and not has_reuse_atom:
-            substitute_import = (
-                "\nfrom cliany_site.action_runtime import substitute_parameters"
-            )
+            substitute_import = "\nfrom cliany_site.action_runtime import substitute_parameters"
 
         atom_imports = ""
         normalize_helper = ""
@@ -74,6 +86,14 @@ def _normalize_atom_actions(actions):
     return normalized
 """
 
+        gen_elapsed = (time.monotonic() - gen_start) * 1000
+        logger.info(
+            "adapter 生成完成: domain=%s commands=%d 耗时 %.0fms",
+            domain,
+            len(command_blocks),
+            gen_elapsed,
+        )
+
         return f'''# 自动生成 — DO NOT EDIT
 # 生成时间: {generated_at}
 # 来源 URL: {source_url}
@@ -83,7 +103,7 @@ import asyncio
 import json
 import click
 from cliany_site.action_runtime import execute_action_steps
-from cliany_site.browser.cdp import CDPConnection
+from cliany_site.browser.cdp import CDPConnection, cdp_from_context
 from cliany_site.session import load_session_data
 from cliany_site.response import success_response, error_response, print_response
 from cliany_site.errors import CDP_UNAVAILABLE, SESSION_EXPIRED, EXECUTION_FAILED{atom_imports}{substitute_import}
@@ -119,117 +139,11 @@ if __name__ == "__main__":
 '''
 
     def generate_atom_command(self, atom: AtomCommand) -> str:
-        atom_id = self._sanitize_inline_text(atom.atom_id) or "unknown-atom"
-        command_source_name = self._sanitize_inline_text(atom.name) or atom_id
-        command_name = self._to_command_name(command_source_name, 0)
-        function_name = self._to_function_name(command_name)
-        description = self._sanitize_docstring_text(
-            atom.description or f"执行原子命令 {command_name}"
-        )
-        missing_message = self._sanitize_inline_text(f"原子命令 '{atom_id}' 未找到")
-
-        option_decorators: list[str] = []
-        param_entries: list[str] = []
-        used_names = {"ctx", "json_mode", "param_args"}
-
-        for index, raw_parameter in enumerate(atom.parameters or []):
-            if isinstance(raw_parameter, AtomParameter):
-                parameter = raw_parameter
-            elif isinstance(raw_parameter, dict):
-                parameter = AtomParameter(
-                    name=str(raw_parameter.get("name") or ""),
-                    description=str(raw_parameter.get("description") or ""),
-                    default=str(raw_parameter.get("default") or ""),
-                    required=bool(raw_parameter.get("required", False)),
-                )
-            else:
-                continue
-
-            raw_name = (
-                self._sanitize_inline_text(parameter.name) or f"param_{index + 1}"
-            )
-            option_name = re.sub(
-                r"[^a-zA-Z0-9_-]+", "-", raw_name.replace("_", "-").lower()
-            )
-            option_name = re.sub(r"[_-]+", "-", option_name).strip("-")
-            if not option_name:
-                option_name = f"param-{index + 1}"
-
-            parameter_name = self._unique_parameter_name(
-                self._to_parameter_name(raw_name), used_names
-            )
-            used_names.add(parameter_name)
-
-            option_parts = [
-                repr(f"--{option_name}"),
-                repr(parameter_name),
-                f"required={bool(parameter.required)!r}",
-            ]
-            if parameter.default:
-                option_parts.append(f"default={parameter.default!r}")
-
-            help_text = self._sanitize_inline_text(parameter.description)
-            if help_text:
-                option_parts.append(f"help={help_text!r}")
-
-            option_decorators.append(f"@click.option({', '.join(option_parts)})")
-
-            param_key = raw_name
-            param_entries.append(f"{param_key!r}: param_args.get({parameter_name!r})")
-
-        params_payload = "{}"
-        if param_entries:
-            params_payload = "{" + ", ".join(param_entries) + "}"
-
-        decorator_lines = [
-            f'@atoms_group.command("{command_name}")',
-            *option_decorators,
-            '@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")',
-            '@click.option("--retry", is_flag=True, default=False, help="执行失败时提示重新 explore")',
-            "@click.pass_context",
-        ]
-        decorators_text = "\n".join(decorator_lines)
-
-        return f'''{decorators_text}
-def {function_name}(ctx: click.Context, json_mode: bool | None, retry: bool, **param_args):
-    """{description}"""
-    async def _run():
-        atom = load_atom(DOMAIN, {atom_id!r})
-        if atom is None:
-            return error_response(EXECUTION_FAILED, {missing_message!r})
-        params = {params_payload}
-        actions = substitute_parameters(_normalize_atom_actions(atom.actions), params)
-        cdp = CDPConnection()
-        if not await cdp.check_available():
-            return error_response(CDP_UNAVAILABLE, "Chrome CDP 不可用", "启动 Chrome 并开启 --remote-debugging-port=9222")
-        browser_session = await cdp.connect()
-        await browser_session.navigate_to(SOURCE_URL, new_tab=False)
-        await asyncio.sleep(1.5)
-        session_data = load_session_data(DOMAIN)
-        if session_data:
-            if session_data.get("expires_hint") == "expired":
-                return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
-            await browser_session._cdp_set_cookies(session_data.get("cookies", []))
-        try:
-            await execute_action_steps(browser_session, actions, continue_on_error=True)
-            return success_response({{"status": "completed", "command": "atoms {command_name}", "atom_id": {atom_id!r}, "args": params}})
-        except Exception as e:
-            fix_hint = ""
-            if hasattr(e, "to_dict"):
-                fix_hint = e.to_dict().get("suggestion", "")
-            if retry:
-                retry_cmd = f"cliany-site explore \\"{{SOURCE_URL}}\\" \\"<workflow>\\" --force"
-                fix_hint = f"{{fix_hint}} | 重试: {{retry_cmd}}" if fix_hint else f"重试: {{retry_cmd}}"
-            return error_response(EXECUTION_FAILED, str(e), fix_hint or None)
-        finally:
-            await cdp.disconnect()
-    result = asyncio.run(_run())
-    print_response(result, _resolve_json_mode(json_mode))
-'''
+        return render_atom_command(atom)
 
     def generate_with_atoms(self) -> str:
         domain = self._resolve_generation_domain()
-        generated_at = datetime.now(timezone.utc).isoformat()
+        generated_at = datetime.now(UTC).isoformat()
         domain_doc = self._sanitize_docstring_text(domain)
         source_url = f"https://{domain}"
         atoms = load_atoms(domain)
@@ -322,9 +236,7 @@ if __name__ == "__main__":
         return save_adapter(domain, code)
 
     def _resolve_generation_domain(self, domain: str | None = None) -> str:
-        resolved = self._sanitize_inline_text(
-            domain if domain is not None else self.domain
-        )
+        resolved = self._sanitize_inline_text(domain if domain is not None else self.domain)
         if not resolved:
             resolved = "unknown-domain"
         self.domain = resolved
@@ -347,333 +259,17 @@ if __name__ == "__main__":
 
         if explore_result.actions:
             action_types = [
-                self._sanitize_inline_text(step.action_type)
-                for step in explore_result.actions
-                if step.action_type
+                self._sanitize_inline_text(step.action_type) for step in explore_result.actions if step.action_type
             ]
             if action_types:
                 return " -> ".join(action_types[:5])
 
         return "自动探索工作流"
 
-    def _deduplicate_parameterized_actions(
-        self,
-        step_indices: list[int],
-        all_actions: list[ActionStep],
-        param_overrides: dict[int, str] | None = None,
-    ) -> list[int]:
-        """Remove hardcoded actions superseded by parameterized versions."""
-        if not step_indices:
-            return step_indices
-
-        param_pattern = re.compile(r"\{\{\w+\}\}")
-        overrides = param_overrides or {}
-
-        param_positions: list[int] = []
-        for pos, idx in enumerate(step_indices):
-            if idx in overrides:
-                param_positions.append(pos)
-            elif 0 <= idx < len(all_actions):
-                if param_pattern.search(all_actions[idx].value or ""):
-                    param_positions.append(pos)
-
-        if not param_positions:
-            return step_indices
-
-        to_remove: set[int] = set()
-
-        for param_pos in param_positions:
-            param_idx = step_indices[param_pos]
-            fp = self._action_fingerprint(all_actions[param_idx])
-            for other_pos in range(len(step_indices)):
-                if other_pos == param_pos or other_pos in to_remove:
-                    continue
-                if other_pos in param_positions:
-                    continue
-                other_idx = step_indices[other_pos]
-                if not (0 <= other_idx < len(all_actions)):
-                    continue
-                other_action = all_actions[other_idx]
-                if (
-                    self._action_fingerprint(other_action) == fp
-                    and not param_pattern.search(other_action.value or "")
-                    and other_idx not in overrides
-                ):
-                    to_remove.add(other_pos)
-
-        if to_remove:
-            first_removed = min(to_remove)
-            first_param = min(param_positions)
-            for pos in range(first_removed, first_param):
-                if pos in to_remove:
-                    continue
-                idx = step_indices[pos]
-                if not (0 <= idx < len(all_actions)):
-                    continue
-                action = all_actions[idx]
-                if action.value:
-                    continue
-                fp = self._action_fingerprint(action)
-                for later_pos in range(first_param, len(step_indices)):
-                    if later_pos in to_remove:
-                        continue
-                    later_idx = step_indices[later_pos]
-                    if 0 <= later_idx < len(all_actions):
-                        later_action = all_actions[later_idx]
-                        if (
-                            self._action_fingerprint(later_action) == fp
-                            and not later_action.value
-                        ):
-                            to_remove.add(pos)
-                            break
-
-        if not to_remove:
-            return step_indices
-
-        return [idx for pos, idx in enumerate(step_indices) if pos not in to_remove]
-
-    def _remove_consecutive_duplicate_clicks(
-        self,
-        step_indices: list[int],
-        all_actions: list[ActionStep],
-    ) -> list[int]:
-        if len(step_indices) < 2:
-            return step_indices
-
-        result: list[int] = [step_indices[0]]
-        for i in range(1, len(step_indices)):
-            idx = step_indices[i]
-            prev_idx = result[-1]
-            if not (0 <= idx < len(all_actions) and 0 <= prev_idx < len(all_actions)):
-                result.append(idx)
-                continue
-            cur = all_actions[idx]
-            prev = all_actions[prev_idx]
-            if (
-                cur.action_type == prev.action_type
-                and cur.action_type in ("click", "submit")
-                and self._action_fingerprint(cur) == self._action_fingerprint(prev)
-            ):
-                continue
-            result.append(idx)
-        return result
-
-    def _remove_redundant_duplicate_actions(
-        self,
-        step_indices: list[int],
-        all_actions: list[ActionStep],
-        param_overrides: dict[int, str],
-    ) -> list[int]:
-        seen: dict[tuple[str, str, str, str], int] = {}
-        keep: list[int] = []
-        for idx in step_indices:
-            if not (0 <= idx < len(all_actions)):
-                keep.append(idx)
-                continue
-            action = all_actions[idx]
-            effective_value = param_overrides.get(idx, action.value or "")
-            key = (*self._action_fingerprint(action), effective_value)
-            if key in seen:
-                continue
-            seen[key] = idx
-            keep.append(idx)
-        return keep
-
-    def _auto_detect_params_from_actions(
-        self,
-        step_indices: list[int],
-        all_actions: list[ActionStep],
-    ) -> list[dict[str, Any]]:
-        """Scan action values for {{param_name}} patterns and generate arg defs."""
-        param_pattern = re.compile(r"\{\{(\w+)\}\}")
-        seen: set[str] = set()
-        auto_args: list[dict[str, Any]] = []
-
-        for idx in step_indices:
-            if not (0 <= idx < len(all_actions)):
-                continue
-            action = all_actions[idx]
-            for match in param_pattern.finditer(action.value or ""):
-                param_name = match.group(1)
-                if param_name not in seen:
-                    seen.add(param_name)
-                    auto_args.append(
-                        {
-                            "name": param_name,
-                            "description": f"参数 {param_name}",
-                            "required": True,
-                        }
-                    )
-        return auto_args
-
-    @staticmethod
-    def _action_fingerprint(action: ActionStep) -> tuple[str, str, str]:
-        """Return (action_type, target_name, target_role) for dedup matching."""
-        return (
-            action.action_type or "",
-            action.target_name or "",
-            action.target_role or "",
-        )
-
-    def _build_param_overrides(
-        self,
-        args: list[dict[str, Any]] | None,
-        step_indices: list[int],
-        all_actions: list[ActionStep],
-    ) -> dict[int, str]:
-        """Map action_index → '{{param_name}}' for value substitution.
-
-        Also overrides duplicate steps sharing the same fingerprint.
-        """
-        overrides: dict[int, str] = {}
-        step_set = set(step_indices)
-
-        for arg in args or []:
-            if not isinstance(arg, dict):
-                continue
-            name = str(arg.get("name") or "").strip()
-            if not name:
-                continue
-            placeholder = f"{{{{{name}}}}}"
-
-            primary_idx: int | None = None
-            action_idx = arg.get("action_index")
-            if isinstance(action_idx, int) and action_idx in step_set:
-                primary_idx = action_idx
-            else:
-                default = str(arg.get("default") or "").strip()
-                if default:
-                    for idx in step_indices:
-                        if idx in overrides:
-                            continue
-                        if 0 <= idx < len(all_actions):
-                            if (all_actions[idx].value or "").strip() == default:
-                                primary_idx = idx
-                                break
-
-            if primary_idx is None:
-                continue
-
-            overrides[primary_idx] = placeholder
-
-            if 0 <= primary_idx < len(all_actions):
-                fp = self._action_fingerprint(all_actions[primary_idx])
-                for idx in step_indices:
-                    if idx == primary_idx or idx in overrides:
-                        continue
-                    if 0 <= idx < len(all_actions):
-                        if self._action_fingerprint(all_actions[idx]) == fp:
-                            overrides[idx] = placeholder
-
-        return overrides
-
-    def _render_command_block(
-        self,
-        command: CommandSuggestion,
-        all_actions: list[ActionStep],
-        index: int,
-    ) -> str:
-        command_name = self._to_command_name(command.name, index)
-        function_name = self._to_function_name(command_name)
-        description = self._sanitize_docstring_text(
-            command.description or f"执行命令 {command_name}"
-        )
-
-        effective_args = command.args
-        if not effective_args:
-            effective_args = self._auto_detect_params_from_actions(
-                command.action_steps, all_actions
-            )
-
-        # Order matters: overrides must be computed before dedup so dedup
-        # knows which indices are parameterized (fixes fallback-inference path).
-        param_overrides = self._build_param_overrides(
-            effective_args, command.action_steps, all_actions
-        )
-        cleaned_steps = self._deduplicate_parameterized_actions(
-            command.action_steps, all_actions, param_overrides
-        )
-        cleaned_steps = self._remove_consecutive_duplicate_clicks(
-            cleaned_steps, all_actions
-        )
-        cleaned_steps = self._remove_redundant_duplicate_actions(
-            cleaned_steps, all_actions, param_overrides
-        )
-        param_overrides = {
-            idx: v for idx, v in param_overrides.items() if idx in set(cleaned_steps)
-        }
-
-        arg_decorators, arg_parameters = self._render_argument_decorators(
-            effective_args
-        )
-
-        decorator_lines = [
-            f'@cli.command("{command_name}")',
-            '@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")',
-            '@click.option("--retry", is_flag=True, default=False, help="执行失败时提示重新 explore")',
-            "@click.pass_context",
-            *arg_decorators,
-        ]
-        decorators_text = "\n".join(decorator_lines)
-
-        function_args = [
-            "ctx: click.Context",
-            "json_mode: bool | None",
-            "retry: bool",
-            *arg_parameters,
-        ]
-        function_signature = ", ".join(function_args)
-        args_payload = self._render_args_payload(arg_parameters)
-
-        execution_blocks = self._render_execution_blocks(
-            cleaned_steps,
-            all_actions,
-            arg_parameters,
-            raw_args=effective_args,
-            param_overrides=param_overrides,
-        )
-
-        return f'''{decorators_text}
-def {function_name}({function_signature}):
-    """{description}"""
-    async def _run():
-        cdp = CDPConnection()
-        if not await cdp.check_available():
-            return error_response(CDP_UNAVAILABLE, "Chrome CDP 不可用", "启动 Chrome 并开启 --remote-debugging-port=9222")
-        browser_session = await cdp.connect()
-        await browser_session.navigate_to(SOURCE_URL, new_tab=False)
-        await asyncio.sleep(1.5)
-        session_data = load_session_data(DOMAIN)
-        if session_data:
-            if session_data.get("expires_hint") == "expired":
-                return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
-            await browser_session._cdp_set_cookies(session_data.get("cookies", []))
-        try:
-{execution_blocks}
-            return success_response({{"status": "completed", "command": "{command_name}", "args": {args_payload}}})
-        except Exception as e:
-            fix_hint = ""
-            if hasattr(e, "to_dict"):
-                fix_hint = e.to_dict().get("suggestion", "")
-            if retry:
-                retry_cmd = f"cliany-site explore \\"{{SOURCE_URL}}\\" \\"<workflow>\\" --force"
-                fix_hint = f"{{fix_hint}} | 重试: {{retry_cmd}}" if fix_hint else f"重试: {{retry_cmd}}"
-            return error_response(EXECUTION_FAILED, str(e), fix_hint or None)
-        finally:
-            await cdp.disconnect()
-    result = asyncio.run(_run())
-    print_response(result, _resolve_json_mode(json_mode))
-'''
-
     def _has_reuse_atom_actions(self, explore_result: ExploreResult) -> bool:
-        for action in explore_result.actions:
-            if action.action_type == "reuse_atom":
-                return True
-        return False
+        return any(action.action_type == "reuse_atom" for action in explore_result.actions)
 
-    def _collect_atom_refs(
-        self, action_steps: list[int], all_actions: list[ActionStep]
-    ) -> list[str]:
+    def _collect_atom_refs(self, action_steps: list[int], all_actions: list[ActionStep]) -> list[str]:
         seen: list[str] = []
         for raw_step in action_steps or []:
             if not isinstance(raw_step, int):
@@ -687,409 +283,25 @@ def {function_name}({function_signature}):
                     seen.append(atom_id)
         return seen
 
-    def _render_execution_blocks(
-        self,
-        action_steps: list[int],
-        all_actions: list[ActionStep],
-        arg_parameters: list[str],
-        raw_args: list[dict[str, Any]] | None = None,
-        param_overrides: dict[int, str] | None = None,
-    ) -> str:
-        if not action_steps:
-            return "            action_steps = []\n            await execute_action_steps(browser_session, action_steps, continue_on_error=True)"
-
-        groups: list[tuple[str, Any]] = []
-        inline_group: list[int] = []
-
-        for raw_step in action_steps:
-            if not isinstance(raw_step, int):
-                continue
-            if raw_step < 0 or raw_step >= len(all_actions):
-                continue
-            action = all_actions[raw_step]
-            if action.action_type == "reuse_atom":
-                if inline_group:
-                    groups.append(("inline", list(inline_group)))
-                    inline_group = []
-                groups.append(("atom", action))
-            else:
-                inline_group.append(raw_step)
-
-        if inline_group:
-            groups.append(("inline", inline_group))
-
-        if not groups:
-            return "            action_steps = []\n            await execute_action_steps(browser_session, action_steps, continue_on_error=True)"
-
-        block_lines: list[str] = []
-        var_counter = [0]
-
-        for group_type, group_data in groups:
-            if group_type == "inline":
-                step_indices: list[int] = group_data
-                var_counter[0] += 1
-                var_name = (
-                    f"action_steps_{var_counter[0]}"
-                    if var_counter[0] > 1
-                    else "action_steps"
-                )
-                comment_lines = self._render_action_comment_lines(
-                    step_indices, all_actions
-                )
-                literal = self._render_action_data_literal(
-                    step_indices, all_actions, param_overrides
-                )
-                block_lines.append(f"            {var_name} = json.loads({literal!r})")
-                block_lines.append(comment_lines)
-                if arg_parameters and raw_args:
-                    sub_code = self._render_substitute_params_code(
-                        raw_args, arg_parameters
-                    )
-                    block_lines.append(
-                        f"            {var_name} = substitute_parameters({var_name}, {sub_code})"
-                    )
-                block_lines.append(
-                    f"            await execute_action_steps(browser_session, {var_name}, continue_on_error=True)"
-                )
-            else:
-                atom_action: ActionStep = group_data
-                atom_id = atom_action.target_ref
-                params_dict = atom_action.target_attributes or {}
-                description_text = self._sanitize_inline_text(atom_action.description)
-                safe_var = re.sub(r"[^a-zA-Z0-9]", "_", atom_id)
-                atom_var = f"_atom_{safe_var}"
-                params_code = self._render_atom_params_code(params_dict, arg_parameters)
-                comment = f"            # atom: {atom_id}"
-                if description_text:
-                    comment += f" — {description_text}"
-                block_lines.append(comment)
-                block_lines.append(
-                    f"            {atom_var} = load_atom(DOMAIN, {atom_id!r})"
-                )
-                block_lines.append(f"            if {atom_var}:")
-                block_lines.append(
-                    f"                _atom_actions = substitute_parameters(_normalize_atom_actions({atom_var}.actions), {params_code})"
-                )
-                block_lines.append(
-                    f"                await execute_action_steps(browser_session, _atom_actions, continue_on_error=True)"
-                )
-
-        return "\n".join(block_lines)
-
-    def _render_atom_params_code(
-        self, params_dict: dict, arg_parameters: list[str]
-    ) -> str:
-        if not params_dict:
-            return "{}"
-        entries: list[str] = []
-        for key, val in params_dict.items():
-            key_as_param = self._to_parameter_name(str(key))
-            if key_as_param in arg_parameters:
-                entries.append(f"{key!r}: {key_as_param}")
-            else:
-                val_as_param = self._to_parameter_name(str(val))
-                if val_as_param in arg_parameters:
-                    entries.append(f"{key!r}: {val_as_param}")
-                else:
-                    entries.append(f"{key!r}: {str(val)!r}")
-        return "{" + ", ".join(entries) + "}"
-
-    def _render_substitute_params_code(
-        self,
-        raw_args: list[dict[str, Any]],
-        arg_parameters: list[str],
-    ) -> str:
-        """Map raw arg names (matching {{param_name}} placeholders) to sanitized Python variable names."""
-        entries: list[str] = []
-        for i, arg in enumerate(raw_args or []):
-            if not isinstance(arg, dict):
-                continue
-            raw_name = str(arg.get("name") or "").strip()
-            if not raw_name or i >= len(arg_parameters):
-                continue
-            param_var = arg_parameters[i]
-            entries.append(f"{raw_name!r}: {param_var}")
-            # dual-key: raw_name="issue-title" → param_var="issue_title", support both in {{}}
-            if param_var != raw_name:
-                entries.append(f"{param_var!r}: {param_var}")
-        if not entries:
-            return "{}"
-        return "{" + ", ".join(entries) + "}"
-
-    def _render_empty_command_block(self) -> str:
-        return '''@cli.command("run-workflow")
-@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")
-@click.option("--retry", is_flag=True, default=False, help="执行失败时提示重新 explore")
-@click.pass_context
-def run_workflow(ctx: click.Context, json_mode: bool | None, retry: bool):
-    """执行默认工作流"""
-    async def _run():
-        cdp = CDPConnection()
-        if not await cdp.check_available():
-            return error_response(CDP_UNAVAILABLE, "Chrome CDP 不可用", "启动 Chrome 并开启 --remote-debugging-port=9222")
-        browser_session = await cdp.connect()
-        await browser_session.navigate_to(SOURCE_URL, new_tab=False)
-        await asyncio.sleep(1.5)
-        session_data = load_session_data(DOMAIN)
-        if session_data:
-            if session_data.get("expires_hint") == "expired":
-                return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
-            await browser_session._cdp_set_cookies(session_data.get("cookies", []))
-        try:
-            action_steps = []
-            # - 无操作步骤
-            await execute_action_steps(browser_session, action_steps, continue_on_error=True)
-            return success_response({"status": "completed", "command": "run-workflow"})
-        except Exception as e:
-            fix_hint = ""
-            if hasattr(e, "to_dict"):
-                fix_hint = e.to_dict().get("suggestion", "")
-            if retry:
-                retry_cmd = f"cliany-site explore \\"{{SOURCE_URL}}\\" \\"<workflow>\\" --force"
-                fix_hint = f"{{fix_hint}} | 重试: {{retry_cmd}}" if fix_hint else f"重试: {{retry_cmd}}"
-            return error_response(EXECUTION_FAILED, str(e), fix_hint or None)
-        finally:
-            await cdp.disconnect()
-    result = asyncio.run(_run())
-    print_response(result, _resolve_json_mode(json_mode))
-'''
-
-    def _render_argument_decorators(
-        self, args: list[dict[str, Any]]
-    ) -> tuple[list[str], list[str]]:
-        decorators: list[str] = []
-        parameters: list[str] = []
-        used_names = {"json_mode", "ctx"}
-
-        for index, arg in enumerate(args or []):
-            if not isinstance(arg, dict):
-                continue
-
-            raw_name = str(arg.get("name") or arg.get("key") or f"arg_{index + 1}")
-            parameter_name = self._unique_parameter_name(
-                self._to_parameter_name(raw_name), used_names
-            )
-            used_names.add(parameter_name)
-            parameters.append(parameter_name)
-
-            positional = bool(arg.get("positional", False)) or str(
-                arg.get("kind", "")
-            ).lower() in {"argument", "positional"}
-            click_type = self._render_click_type(arg.get("type"), arg.get("choices"))
-            required = bool(arg.get("required", False))
-            default = arg.get("default")
-            help_text = self._sanitize_inline_text(
-                str(arg.get("description") or arg.get("help") or "")
-            )
-
-            if positional:
-                argument_name = parameter_name
-                params = [repr(argument_name)]
-                if click_type:
-                    params.append(f"type={click_type}")
-                if not required:
-                    params.append("required=False")
-                if default is not None:
-                    params.append(f"default={default!r}")
-                decorators.append(f"@click.argument({', '.join(params)})")
-                continue
-
-            option_name = str(arg.get("option") or arg.get("flag") or "").strip()
-            if not option_name:
-                option_name = f"--{raw_name.replace('_', '-')}"
-            elif not option_name.startswith("-"):
-                option_name = f"--{option_name}"
-
-            short_name = arg.get("short")
-            option_parts = [repr(option_name)]
-            if isinstance(short_name, str) and short_name:
-                short_flag = (
-                    short_name if short_name.startswith("-") else f"-{short_name}"
-                )
-                option_parts.append(repr(short_flag))
-            option_parts.append(repr(parameter_name))
-
-            option_kwargs: list[str] = []
-            arg_type = str(arg.get("type") or "").lower()
-            is_flag = bool(arg.get("is_flag", False)) or arg_type in {
-                "bool",
-                "boolean",
-                "flag",
-            }
-
-            if is_flag:
-                option_kwargs.append("is_flag=True")
-                if default is not None:
-                    option_kwargs.append(f"default={bool(default)!r}")
-                else:
-                    option_kwargs.append("default=False")
-            else:
-                if click_type:
-                    option_kwargs.append(f"type={click_type}")
-                if required:
-                    option_kwargs.append("required=True")
-                if default is not None:
-                    option_kwargs.append(f"default={default!r}")
-
-            if help_text:
-                option_kwargs.append(f"help={help_text!r}")
-
-            decorators.append(
-                f"@click.option({', '.join(option_parts + option_kwargs)})"
-            )
-
-        return decorators, parameters
-
-    def _render_click_type(self, type_value: Any, choices: Any) -> str | None:
-        if isinstance(choices, list) and choices:
-            normalized_choices = [str(item) for item in choices]
-            return f"click.Choice({normalized_choices!r})"
-
-        type_name = str(type_value or "").lower()
-        if type_name in {"", "str", "string", "text"}:
-            return None
-        if type_name in {"int", "integer"}:
-            return "int"
-        if type_name in {"float", "number", "double"}:
-            return "float"
-        if type_name in {"path", "filepath", "file"}:
-            return "click.Path()"
-
-        return None
-
-    def _render_action_comment_lines(
-        self, action_steps: list[int], all_actions: list[ActionStep]
-    ) -> str:
-        lines: list[str] = []
-        for raw_step in action_steps or []:
-            if not isinstance(raw_step, int):
-                lines.append("            # - 非法 action 索引，已跳过")
-                continue
-            if raw_step < 0 or raw_step >= len(all_actions):
-                lines.append(f"            # - action[{raw_step}] 不存在，已跳过")
-                continue
-
-            action = all_actions[raw_step]
-            action_type = self._sanitize_inline_text(action.action_type or "unknown")
-            detail = self._action_detail(action)
-            description = self._sanitize_inline_text(action.description)
-
-            message = f"            # - [{raw_step}] {action_type}: {detail}"
-            if description:
-                message += f" | {description}"
-            lines.append(message)
-
-        if not lines:
-            return "            # - 无操作步骤"
-        return "\n".join(lines)
-
-    def _render_action_data_literal(
-        self,
-        action_steps: list[int],
-        all_actions: list[ActionStep],
-        param_overrides: dict[int, str] | None = None,
-    ) -> str:
-        payload: list[dict[str, Any]] = []
-        for raw_step in action_steps or []:
-            if not isinstance(raw_step, int):
-                continue
-            if raw_step < 0 or raw_step >= len(all_actions):
-                continue
-
-            action = all_actions[raw_step]
-            if action.action_type == "reuse_atom":
-                continue
-
-            value = action.value
-            if param_overrides and raw_step in param_overrides:
-                value = param_overrides[raw_step]
-
-            payload.append(
-                {
-                    "type": action.action_type,
-                    "ref": action.target_ref,
-                    "url": action.target_url,
-                    "value": value,
-                    "description": action.description,
-                    "target_name": action.target_name,
-                    "target_role": action.target_role,
-                    "target_attributes": action.target_attributes,
-                }
-            )
-        return json.dumps(payload, ensure_ascii=False)
-
-    def _action_detail(self, action: ActionStep) -> str:
-        action_type = (action.action_type or "").lower()
-        if action_type == "navigate":
-            return self._sanitize_inline_text(
-                action.target_url or action.page_url or "导航"
-            )
-        if action_type == "click":
-            return self._sanitize_inline_text(action.target_ref or "点击元素")
-        if action_type == "type":
-            target = self._sanitize_inline_text(action.target_ref or "输入框")
-            value = self._sanitize_inline_text(action.value)
-            return f"{target} <- {value}"
-        if action_type == "select":
-            target = self._sanitize_inline_text(action.target_ref or "下拉框")
-            value = self._sanitize_inline_text(action.value)
-            return f"{target} => {value}"
-        if action_type == "submit":
-            return "提交当前表单"
-
-        target = self._sanitize_inline_text(
-            action.target_ref or action.target_url or action.page_url
-        )
-        return target or "执行操作"
-
-    def _render_args_payload(self, arg_parameters: list[str]) -> str:
-        if not arg_parameters:
-            return "{}"
-        parts = [f"{name!r}: {name}" for name in arg_parameters]
-        return "{" + ", ".join(parts) + "}"
+    # --- 向后兼容的委托方法（保留下划线前缀 API） ---
 
     def _to_command_name(self, name: str, index: int) -> str:
-        normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", (name or "").strip().lower())
-        normalized = re.sub(r"[_-]+", "-", normalized).strip("-")
-        if not normalized:
-            return f"command-{index + 1}"
-        if normalized[0].isdigit():
-            normalized = f"cmd-{normalized}"
-        return normalized
+        return to_command_name(name, index)
 
     def _to_function_name(self, command_name: str) -> str:
-        function_name = command_name.replace("-", "_")
-        function_name = re.sub(r"[^a-zA-Z0-9_]", "_", function_name)
-        function_name = re.sub(r"_+", "_", function_name).strip("_")
-        if not function_name:
-            return "generated_command"
-        if function_name[0].isdigit():
-            return f"cmd_{function_name}"
-        return function_name
+        return to_function_name(command_name)
 
     def _to_parameter_name(self, raw_name: str) -> str:
-        parameter_name = raw_name.replace("-", "_")
-        parameter_name = re.sub(r"[^a-zA-Z0-9_]", "_", parameter_name)
-        parameter_name = re.sub(r"_+", "_", parameter_name).strip("_")
-        if not parameter_name:
-            parameter_name = "arg"
-        if parameter_name[0].isdigit():
-            parameter_name = f"arg_{parameter_name}"
-        return parameter_name
+        return to_parameter_name(raw_name)
 
     def _unique_parameter_name(self, base_name: str, used_names: set[str]) -> str:
-        if base_name not in used_names:
-            return base_name
-        index = 2
-        while f"{base_name}_{index}" in used_names:
-            index += 1
-        return f"{base_name}_{index}"
+        return unique_parameter_name(base_name, used_names)
 
     def _sanitize_inline_text(self, value: str) -> str:
-        return str(value or "").replace("\n", " ").replace("\r", " ").strip()
+        return sanitize_inline_text(value)
 
     def _sanitize_docstring_text(self, value: str) -> str:
-        return self._sanitize_inline_text(value).replace('"""', '\\"\\"\\"')
+        return sanitize_docstring_text(value)
 
 
 def save_adapter(
@@ -1098,31 +310,30 @@ def save_adapter(
     metadata: dict | None = None,
     explore_result: ExploreResult | None = None,
 ) -> str:
-    """保存 adapter 到 ~/.cliany-site/adapters/<domain>/"""
-    adapter_dir = Path.home() / ".cliany-site" / "adapters" / _safe_domain(domain)
+    adapter_dir = get_config().adapters_dir / _safe_domain(domain)
     adapter_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("保存 adapter: domain=%s path=%s", domain, adapter_dir)
 
     commands_path = adapter_dir / "commands.py"
     metadata_path = adapter_dir / "metadata.json"
 
-    # 原子写入 commands.py (tempfile → os.replace)
     fd, tmp_path = tempfile.mkstemp(dir=str(adapter_dir), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(code)
         os.replace(tmp_path, str(commands_path))
-    except Exception:
+    except OSError:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
 
-    base_metadata = {
+    base_metadata: dict[str, Any] = {
         "schema_version": METADATA_SCHEMA_VERSION,
         "domain": domain,
         "source_url": _extract_header_value(code, "# 来源 URL:"),
         "workflow": _extract_header_value(code, "# 工作流:"),
         "commands": _extract_commands_from_code(code),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "explore_model": explore_result.explore_model if explore_result else "",
     }
     if metadata:
@@ -1179,17 +390,24 @@ def save_adapter(
     if "workflow" not in base_metadata:
         base_metadata["workflow"] = ""
 
-    # 原子写入 metadata.json
     meta_content = json.dumps(base_metadata, ensure_ascii=False, indent=2)
     fd, tmp_path = tempfile.mkstemp(dir=str(adapter_dir), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(meta_content)
         os.replace(tmp_path, str(metadata_path))
-    except Exception:
+    except OSError:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
+
+    if explore_result:
+        try:
+            from cliany_site.snapshot import save_explore_snapshots
+
+            save_explore_snapshots(domain, explore_result)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.debug("保存 AXTree 快照失败: %s", exc)
 
     return str(commands_path.resolve())
 

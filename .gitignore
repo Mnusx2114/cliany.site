@@ -24,6 +24,5 @@ MANIFEST
 
 .vercel
 .sisyphus/
-tests/
 
 scripts/.pypi-token

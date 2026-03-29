@@ -3,9 +3,8 @@ import json
 from pathlib import Path
 
 from cliany_site.atoms.models import AtomCommand, AtomParameter
+from cliany_site.config import get_config
 
-
-ADAPTERS_DIR = Path.home() / ".cliany-site" / "adapters"
 _ACTION_FIELDS = (
     "action_type",
     "page_url",
@@ -23,7 +22,7 @@ def _safe_domain(domain: str) -> str:
 
 
 def _atoms_dir(domain: str) -> Path:
-    return ADAPTERS_DIR / _safe_domain(domain) / "atoms"
+    return get_config().adapters_dir / _safe_domain(domain) / "atoms"
 
 
 def _atom_path(domain: str, atom_id: str) -> Path:

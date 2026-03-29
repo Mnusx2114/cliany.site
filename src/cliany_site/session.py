@@ -1,21 +1,23 @@
 import json
-import os
-from datetime import datetime, timezone
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from browser_use.browser.session import BrowserSession
 
+from cliany_site.config import get_config
 
-SESSIONS_DIR = Path.home() / ".cliany-site" / "sessions"
+logger = logging.getLogger(__name__)
 
 
 def _session_path(domain: str) -> Path:
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    sessions_dir = get_config().sessions_dir
+    sessions_dir.mkdir(parents=True, exist_ok=True)
     # 将 domain 中的非法文件名字符替换为 _
     safe_domain = domain.replace("/", "_").replace(":", "_")
-    return SESSIONS_DIR / f"{safe_domain}.json"
+    return sessions_dir / f"{safe_domain}.json"
 
 
 # =========== 低层（纯数据 I/O，不依赖浏览器）===========
@@ -28,8 +30,8 @@ def save_session_data(domain: str, data: dict) -> str:
         "domain": domain,
         "cookies": data.get("cookies", []),
         "localStorage": data.get("localStorage", {}),
-        "saved_at": datetime.now(timezone.utc).isoformat(),
-        "expires_hint": data.get("expires_hint", None),
+        "saved_at": datetime.now(UTC).isoformat(),
+        "expires_hint": data.get("expires_hint"),
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
@@ -41,8 +43,9 @@ def load_session_data(domain: str) -> dict | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        data: dict | None = json.loads(path.read_text(encoding="utf-8"))
+        return data
+    except (json.JSONDecodeError, OSError):
         return None
 
 
@@ -60,7 +63,7 @@ def check_session(domain: str) -> dict:
             "saved_at": data.get("saved_at"),
             "expires_hint": data.get("expires_hint"),
         }
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         return {
             "exists": False,
             "domain": domain,
@@ -81,9 +84,7 @@ def clear_session(domain: str) -> bool:
 # =========== 高层（浏览器交互）===========
 
 
-async def save_session(
-    domain: str, browser_session: "BrowserSession"
-) -> tuple[str, int]:
+async def save_session(domain: str, browser_session: "BrowserSession") -> tuple[str, int]:
     """从 BrowserSession 通过 CDP 提取 cookies，保存到文件。
 
     Returns:
@@ -98,7 +99,7 @@ async def save_session(
         raise RuntimeError(f"无法从浏览器获取 Cookie: {e}") from e
 
     cookie_list = [
-        c.model_dump() if hasattr(c, "model_dump") else dict(c)  # type: ignore[union-attr]
+        c.model_dump() if hasattr(c, "model_dump") else dict(c)  # type: ignore[union-attr,attr-defined]
         for c in cookies
     ]
     data = {
@@ -106,6 +107,7 @@ async def save_session(
         "localStorage": {},
     }
     path = save_session_data(domain, data)
+    logger.info("Session 已保存: domain=%s cookies=%d path=%s", domain, len(cookie_list), path)
     return path, len(cookie_list)
 
 
@@ -113,6 +115,7 @@ async def load_session(domain: str, browser_session: "BrowserSession") -> bool:
     """从文件加载 Session 数据，通过 CDP 注入 cookies 到浏览器"""
     session_data = load_session_data(domain)
     if not session_data:
+        logger.debug("Session 不存在: domain=%s", domain)
         return False
 
     cookies = session_data.get("cookies", [])
@@ -122,5 +125,5 @@ async def load_session(domain: str, browser_session: "BrowserSession") -> bool:
     try:
         await browser_session._cdp_set_cookies(cookies)
         return True
-    except Exception:
+    except (OSError, RuntimeError, ValueError):
         return False

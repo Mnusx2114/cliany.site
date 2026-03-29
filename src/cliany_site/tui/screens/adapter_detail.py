@@ -1,10 +1,10 @@
 from textual.app import ComposeResult
-from textual.screen import Screen
-from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane
 from textual.containers import Container
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Header, TabbedContent, TabPane
 
-from cliany_site.loader import discover_adapters
 from cliany_site.atoms.storage import list_atoms
+from cliany_site.loader import discover_adapters
 
 
 class AdapterDetailScreen(Screen):
@@ -21,12 +21,11 @@ class AdapterDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="detail-container"):
-            with TabbedContent():
-                with TabPane("命令", id="tab-commands"):
-                    yield DataTable(id="commands-table")
-                with TabPane("原子", id="tab-atoms"):
-                    yield DataTable(id="atoms-table")
+        with Container(id="detail-container"), TabbedContent():
+            with TabPane("命令", id="tab-commands"):
+                yield DataTable(id="commands-table")
+            with TabPane("原子", id="tab-atoms"):
+                yield DataTable(id="atoms-table")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -54,8 +53,8 @@ class AdapterDetailScreen(Screen):
         commands = metadata.get("commands", [])
         atom_refs = metadata.get("atom_refs", {})
 
-        ref_counts = {}
-        for cmd_name, refs in atom_refs.items():
+        ref_counts: dict[str, int] = {}
+        for _cmd_name, refs in atom_refs.items():
             for ref in refs:
                 ref_counts[ref] = ref_counts.get(ref, 0) + 1
 
@@ -76,9 +75,9 @@ class AdapterDetailScreen(Screen):
 
         atoms = list_atoms(self.domain)
         for atom in atoms:
-            atom_id = atom.atom_id
-            name = atom.name
-            desc = atom.description
-            param_count = len(atom.parameters)
+            atom_id = atom.get("atom_id", "")
+            name = atom.get("name", "")
+            desc = atom.get("description", "")
+            param_count = len(atom.get("parameters", []))
             ref_count = ref_counts.get(atom_id, 0)
             atoms_table.add_row(atom_id, name, desc, str(param_count), str(ref_count))

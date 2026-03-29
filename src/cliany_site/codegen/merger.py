@@ -4,11 +4,12 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from cliany_site.codegen.generator import AdapterGenerator, _safe_domain
+from cliany_site.config import get_config
 from cliany_site.explorer.models import (
     ActionStep,
     CommandSuggestion,
@@ -36,9 +37,7 @@ class MergeResult:
 class AdapterMerger:
     def __init__(self, domain: str):
         self.domain = domain
-        self._adapter_dir = (
-            Path.home() / ".cliany-site" / "adapters" / _safe_domain(domain)
-        )
+        self._adapter_dir = get_config().adapters_dir / _safe_domain(domain)
         self._metadata_path = self._adapter_dir / "metadata.json"
         self._commands_path = self._adapter_dir / "commands.py"
 
@@ -89,8 +88,8 @@ class AdapterMerger:
             existing_by_name[name] = cmd
             result.merged.append(cmd)
 
-        for cmd in new_commands:
-            new_def = self._build_command_definition(cmd, new_actions)
+        for new_cmd in new_commands:
+            new_def = self._build_command_definition(new_cmd, new_actions)
             name = str(new_def.get("name") or "").strip()
             if not name:
                 continue
@@ -125,7 +124,7 @@ class AdapterMerger:
         metadata = {
             "domain": self.domain,
             "commands": merge_result.merged,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "source_url": existing_metadata.get("source_url", f"https://{self.domain}"),
             "workflow": workflow or existing_metadata.get("workflow", ""),
         }
@@ -157,9 +156,7 @@ class AdapterMerger:
 
         if merge_result.conflicts and json_mode:
             existing_names = {
-                str(cmd.get("name") or "").strip()
-                for cmd in merge_result.merged
-                if isinstance(cmd, dict)
+                str(cmd.get("name") or "").strip() for cmd in merge_result.merged if isinstance(cmd, dict)
             }
 
             for conflict in merge_result.conflicts:
@@ -189,9 +186,7 @@ class AdapterMerger:
             import click
 
             existing_names = {
-                str(cmd.get("name") or "").strip()
-                for cmd in merge_result.merged
-                if isinstance(cmd, dict)
+                str(cmd.get("name") or "").strip() for cmd in merge_result.merged if isinstance(cmd, dict)
             }
 
             for conflict in merge_result.conflicts:
@@ -204,15 +199,18 @@ class AdapterMerger:
                     type=click.Choice(["1", "2", "3"]),
                     default="2",
                     show_choices=False,
-                    prompt_suffix="\n  1=覆盖（用新命令替换旧命令）\n  2=保留原有（跳过新命令）\n  3=重命名新的（自动重命名新命令）\n请输入选择 [1/2/3]",
+                    prompt_suffix=(
+                        "\n  1=覆盖（用新命令替换旧命令）"
+                        "\n  2=保留原有（跳过新命令）"
+                        "\n  3=重命名新的（自动重命名新命令）"
+                        "\n请输入选择 [1/2/3]"
+                    ),
                 )
 
                 if choice == "1":
                     # 覆盖：用新命令替换现有命令
                     merge_result.merged = [
-                        cmd
-                        if str(cmd.get("name") or "").strip() != base_name
-                        else dict(conflict.incoming)
+                        cmd if str(cmd.get("name") or "").strip() != base_name else dict(conflict.incoming)
                         for cmd in merge_result.merged
                         if isinstance(cmd, dict)
                     ]
@@ -295,9 +293,7 @@ class AdapterMerger:
             "actions": cmd_actions,
         }
 
-    def _rebuild_explore_result(
-        self, merged_commands: list[dict[str, Any]]
-    ) -> ExploreResult:
+    def _rebuild_explore_result(self, merged_commands: list[dict[str, Any]]) -> ExploreResult:
         all_actions: list[ActionStep] = []
         all_commands: list[CommandSuggestion] = []
 
@@ -319,10 +315,7 @@ class AdapterMerger:
 
                     raw_attributes = raw_action.get("target_attributes", {})
                     if isinstance(raw_attributes, dict):
-                        target_attributes = {
-                            str(key): str(value)
-                            for key, value in raw_attributes.items()
-                        }
+                        target_attributes = {str(key): str(value) for key, value in raw_attributes.items()}
                     else:
                         target_attributes = {}
 

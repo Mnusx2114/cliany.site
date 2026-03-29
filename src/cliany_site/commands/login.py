@@ -1,10 +1,11 @@
 import asyncio
+from typing import Any
 from urllib.parse import urlparse
 
 import click
 
-from cliany_site.response import success_response, error_response, print_response
 from cliany_site.errors import CDP_UNAVAILABLE
+from cliany_site.response import error_response, print_response, success_response
 
 
 @click.command("login")
@@ -20,15 +21,16 @@ def login(ctx: click.Context, url: str, json_mode: bool | None):
     """
     root_ctx = ctx.find_root()
     root_obj = root_ctx.obj if isinstance(root_ctx.obj, dict) else {}
-    effective_json_mode = (
-        json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
-    )
+    effective_json_mode = json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
 
-    result = asyncio.run(_capture_session(url))
+    from cliany_site.browser.cdp import cdp_from_context
+
+    cdp_conn = cdp_from_context(ctx)
+    result = asyncio.run(_capture_session(url, cdp_conn))
     print_response(result, json_mode=effective_json_mode)
 
 
-async def _capture_session(url: str) -> dict:
+async def _capture_session(url: str, cdp_conn: Any = None) -> dict:
     from cliany_site.browser.cdp import CDPConnection
     from cliany_site.session import save_session
 
@@ -37,18 +39,18 @@ async def _capture_session(url: str) -> dict:
     if not domain:
         return error_response("INVALID_URL", f"无法从 URL 提取 domain: {url}")
 
-    cdp = CDPConnection()
+    cdp = cdp_conn if cdp_conn is not None else CDPConnection()
     available = await cdp.check_available()
     if not available:
         return error_response(
             CDP_UNAVAILABLE,
             "Chrome 未通过 CDP 运行",
-            fix="请使用 --remote-debugging-port=9222 启动 Chrome",
+            fix="请使用 --remote-debugging-port=9222 启动 Chrome，或使用 --cdp-url 指定远程地址",
         )
 
     try:
         browser_session = await cdp.connect()
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         return error_response(CDP_UNAVAILABLE, f"连接 Chrome 失败: {e}")
 
     try:
@@ -56,7 +58,7 @@ async def _capture_session(url: str) -> dict:
             page = await browser_session.get_current_page()
             if page is not None:
                 await page.goto(url)
-        except Exception as nav_err:
+        except (OSError, RuntimeError) as nav_err:
             click.echo(
                 f"⚠ 页面导航失败（{nav_err}），请手动在 Chrome 中打开 {url}",
                 err=True,
@@ -82,7 +84,7 @@ async def _capture_session(url: str) -> dict:
                 "message": f"Session 已保存到 {path}（{cookies_count} 个 Cookie）",
             }
         )
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         return error_response("EXECUTION_FAILED", f"Session 捕获失败: {e}")
     finally:
         await cdp.disconnect()

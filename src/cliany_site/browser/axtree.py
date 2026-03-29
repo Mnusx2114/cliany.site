@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from browser_use.browser.session import BrowserSession
+    pass
 
 MAX_CHARS = 20_000
 
@@ -45,16 +45,14 @@ async def capture_axtree(browser_session: Any) -> dict:
                 if hasattr(element, "ax_node") and element.ax_node is not None:
                     ax_name = getattr(element.ax_node, "name", "") or ""
                 if not ax_name:
-                    ax_name = (
-                        element.node_value if hasattr(element, "node_value") else ""
-                    )
+                    ax_name = element.node_value if hasattr(element, "node_value") else ""
                 selector_map[str(ref_id)] = {
                     "ref": str(ref_id),
                     "role": role,
                     "name": ax_name,
                     "attributes": dict(getattr(element, "attributes", {}) or {}),
                 }
-            except Exception:
+            except (AttributeError, TypeError, KeyError):
                 selector_map[str(ref_id)] = {"ref": str(ref_id)}
 
     url = ""
@@ -63,7 +61,7 @@ async def capture_axtree(browser_session: Any) -> dict:
         page = await browser_session.get_current_page()
         url = page.url if page else ""
         title = await page.title() if page else ""
-    except Exception:
+    except (RuntimeError, OSError, AttributeError):
         pass
 
     return {
@@ -75,15 +73,12 @@ async def capture_axtree(browser_session: Any) -> dict:
 
 
 def serialize_axtree(tree: dict) -> str:
-    text = tree.get("element_tree", "")
+    text: str = tree.get("element_tree", "")
     if not text:
         return "(empty page or no interactive elements found)"
 
     if len(text) > MAX_CHARS:
-        text = (
-            text[:MAX_CHARS]
-            + f"\n...[truncated, original length: {len(tree['element_tree'])} chars]"
-        )
+        text = text[:MAX_CHARS] + f"\n...[truncated, original length: {len(tree['element_tree'])} chars]"
 
     return text
 

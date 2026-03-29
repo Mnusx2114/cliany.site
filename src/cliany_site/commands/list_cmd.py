@@ -1,4 +1,5 @@
 import click
+
 from cliany_site.loader import discover_adapters
 from cliany_site.response import print_response, success_response
 

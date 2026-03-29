@@ -4,26 +4,27 @@ import tarfile
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
-    Header,
-    Footer,
-    DataTable,
-    Static,
     Button,
+    DataTable,
+    Footer,
+    Header,
     Input,
+    Static,
     TabbedContent,
     TabPane,
 )
-from textual.containers import Container, Horizontal, Vertical
 from textual.widgets.data_table import CellDoesNotExist
 
-from cliany_site.loader import discover_adapters, ADAPTERS_DIR
-from cliany_site.atoms.storage import list_atoms
-from cliany_site.tui.screens.adapter_detail import AdapterDetailScreen
-from cliany_site.browser.launcher import find_chrome_binary
-from cliany_site.explorer.engine import _load_dotenv
 from cliany_site.activity_log import read_recent_logs
+from cliany_site.atoms.storage import list_atoms
+from cliany_site.browser.launcher import find_chrome_binary
+from cliany_site.config import get_config
+from cliany_site.explorer.engine import _load_dotenv
+from cliany_site.loader import discover_adapters
+from cliany_site.tui.screens.adapter_detail import AdapterDetailScreen
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -94,9 +95,7 @@ class AdapterListScreen(Screen):
                     Static("暂无适配器", id="empty-state", classes="hidden"),
                 )
             with TabPane("活动日志", id="tab-logs"):
-                yield Container(
-                    Static("暂无日志", id="logs-content"), id="logs-container"
-                )
+                yield Container(Static("暂无日志", id="logs-content"), id="logs-container")
 
         yield Footer()
 
@@ -127,7 +126,9 @@ class AdapterListScreen(Screen):
 
         atom_count = sum(len(list_atoms(a.get("domain", ""))) for a in adapters)
 
-        status_text = f"🌐 Chrome: {chrome_status} | 🧠 LLM: {llm_status} | 🔌 适配器: {adapter_count} | 🧱 原子: {atom_count}"
+        status_text = (
+            f"🌐 Chrome: {chrome_status} | 🧠 LLM: {llm_status} | 🔌 适配器: {adapter_count} | 🧱 原子: {atom_count}"
+        )
         self.query_one("#env-status-text", Static).update(status_text)
 
     def _load_logs(self) -> None:
@@ -172,9 +173,7 @@ class AdapterListScreen(Screen):
             metadata = adapter.get("metadata", {})
             created_at = metadata.get("created_at", "-")
 
-            table.add_row(
-                domain, str(cmd_count), str(atom_count), created_at, key=domain
-            )
+            table.add_row(domain, str(cmd_count), str(atom_count), created_at, key=domain)
 
     def action_delete_adapter(self) -> None:
         table = self.query_one(DataTable)
@@ -189,7 +188,7 @@ class AdapterListScreen(Screen):
 
         def check_delete(confirm: bool | None) -> None:
             if confirm:
-                target_dir = ADAPTERS_DIR / domain
+                target_dir = get_config().adapters_dir / domain
                 if target_dir.exists():
                     try:
                         shutil.rmtree(target_dir)
@@ -199,9 +198,7 @@ class AdapterListScreen(Screen):
                     except OSError as e:
                         self.app.notify(f"删除失败: {e}", severity="error")
 
-        self.app.push_screen(
-            ConfirmScreen(f"确定要删除适配器 '{domain}' 吗？"), check_delete
-        )
+        self.app.push_screen(ConfirmScreen(f"确定要删除适配器 '{domain}' 吗？"), check_delete)
 
     def action_export_adapter(self) -> None:
         table = self.query_one(DataTable)
@@ -214,7 +211,7 @@ class AdapterListScreen(Screen):
             self.app.notify("请先选择一个适配器", severity="warning")
             return
 
-        target_dir = ADAPTERS_DIR / domain
+        target_dir = get_config().adapters_dir / domain
         if not target_dir.exists():
             self.app.notify(f"目录不存在: {domain}", severity="error")
             return
@@ -244,32 +241,24 @@ class AdapterListScreen(Screen):
                         self.app.notify("空归档文件", severity="error")
                         return
 
-                    domains = {
-                        m.name.split("/")[0]
-                        for m in members
-                        if "/" in m.name or m.isdir()
-                    }
+                    domains = {m.name.split("/")[0] for m in members if "/" in m.name or m.isdir()}
                     if not domains:
                         domains = {members[0].name}
 
                     domain = list(domains)[0]
-                    target_dir = ADAPTERS_DIR / domain
+                    target_dir = get_config().adapters_dir / domain
                     if target_dir.exists():
-                        self.app.notify(
-                            f"适配器已存在，将被覆盖: {domain}", severity="warning"
-                        )
+                        self.app.notify(f"适配器已存在，将被覆盖: {domain}", severity="warning")
 
-                    ADAPTERS_DIR.mkdir(parents=True, exist_ok=True)
-                    tar.extractall(path=ADAPTERS_DIR)
+                    get_config().adapters_dir.mkdir(parents=True, exist_ok=True)
+                    tar.extractall(path=get_config().adapters_dir)
                     self.app.notify("导入成功")
                     self._load_data()
                     self._update_env_status()
             except (OSError, tarfile.TarError) as e:
                 self.app.notify(f"导入失败: {e}", severity="error")
 
-        self.app.push_screen(
-            InputPathScreen("请输入要导入的 .tar.gz 文件路径:"), do_import
-        )
+        self.app.push_screen(InputPathScreen("请输入要导入的 .tar.gz 文件路径:"), do_import)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         row_key = event.row_key

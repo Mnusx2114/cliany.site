@@ -1,6 +1,6 @@
 import dataclasses
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from cliany_site.atoms.models import AtomCommand, AtomParameter
@@ -93,7 +93,7 @@ class AtomExtractor:
         if isinstance(response, str):
             return response
         if hasattr(response, "content"):
-            return _to_text(getattr(response, "content"))
+            return _to_text(response.content)
         return _to_text(response)
 
     def _to_atom(self, atom_raw: Any, workflow_name: str) -> AtomCommand | None:
@@ -129,6 +129,6 @@ class AtomExtractor:
             domain=self._domain,
             parameters=parameters,
             actions=actions,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             source_workflow=workflow_name,
         )

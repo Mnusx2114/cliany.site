@@ -19,18 +19,13 @@ _PASSTHROUGH_ACTION_TYPES = {"submit", "reuse_atom"}
 
 def _get_action_type(step: object) -> str:
     if isinstance(step, dict):
-        return step.get("action_type", "")
-    return getattr(step, "action_type", "")
+        return str(step.get("action_type", ""))
+    return str(getattr(step, "action_type", ""))
 
 
 def _get_description(step: object) -> str:
     if isinstance(step, dict):
-        return (
-            step.get("target_name")
-            or step.get("description")
-            or step.get("target_ref")
-            or ""
-        )
+        return step.get("target_name") or step.get("description") or step.get("target_ref") or ""
     return (
         getattr(step, "target_name", None)
         or getattr(step, "description", None)
@@ -66,11 +61,7 @@ class ActionValidator:
                 result.success = False
                 result.warnings.append(f"目标元素未找到: {desc}")
             elif element_found is True and action_type == "type":
-                value: str = ""
-                if isinstance(step, dict):
-                    value = step.get("value", "")
-                else:
-                    value = getattr(step, "value", "") or ""
+                value: str = step.get("value", "") if isinstance(step, dict) else getattr(step, "value", "") or ""
                 if value:
                     desc = _get_description(step)
                     result.changes.append(f"输入值: {value} → {desc}")

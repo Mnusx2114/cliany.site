@@ -1,13 +1,13 @@
 # src/cliany_site/commands/doctor.py
 import asyncio
 import os
-from pathlib import Path
+from typing import Any
 
 import click
 
-from cliany_site.response import success_response, error_response, print_response
+from cliany_site.config import get_config
+from cliany_site.response import error_response, print_response, success_response
 
-# 确保加载 .env 配置文件（在任何检查之前）
 try:
     from cliany_site.explorer.engine import _load_dotenv
 
@@ -23,32 +23,34 @@ def doctor(ctx: click.Context, json_mode: bool | None):
     """检查运行环境（CDP / LLM API key / 目录）"""
     root_ctx = ctx.find_root()
     root_obj = root_ctx.obj if isinstance(root_ctx.obj, dict) else {}
-    effective_json_mode = (
-        json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
-    )
-    result = asyncio.run(_run_checks())
+    effective_json_mode = json_mode if json_mode is not None else bool(root_obj.get("json_mode", False))
+
+    from cliany_site.browser.cdp import cdp_from_context
+
+    cdp_conn = cdp_from_context(ctx)
+    result = asyncio.run(_run_checks(cdp_conn))
     print_response(result, json_mode=effective_json_mode, exit_on_error=True)
 
 
-async def _run_checks() -> dict:
+async def _run_checks(cdp_conn: Any = None) -> dict:
     from cliany_site.browser.cdp import CDPConnection
     from cliany_site.explorer.engine import _load_dotenv, _normalize_openai_base_url
 
     _load_dotenv()
 
-    checks = {}
+    checks: dict[str, Any] = {}
 
     try:
-        cdp = CDPConnection()
+        cdp = cdp_conn if cdp_conn is not None else CDPConnection()
         checks["cdp"] = "ok" if await cdp.check_available() else "fail"
 
-        # Chrome 检测信息
         from cliany_site.browser.launcher import find_chrome_binary
 
         chrome_binary = find_chrome_binary()
         checks["chrome_binary_path"] = str(chrome_binary) if chrome_binary else None
         checks["chrome_auto_launched"] = getattr(cdp, "_chrome_auto_launched", False)
-    except Exception:
+        checks["cdp_remote"] = getattr(cdp, "is_remote", False)
+    except (OSError, RuntimeError, TimeoutError):
         checks["cdp"] = "fail"
 
     # 支持新旧环境变量名
@@ -67,16 +69,15 @@ async def _run_checks() -> dict:
         base_url = os.environ.get("CLIANY_OPENAI_BASE_URL")
         try:
             normalized_base_url = _normalize_openai_base_url(base_url)
-            checks["openai_base_url"] = (
-                "ok" if (normalized_base_url or not base_url) else "fail"
-            )
-        except Exception:
+            checks["openai_base_url"] = "ok" if (normalized_base_url or not base_url) else "fail"
+        except (ValueError, TypeError):
             checks["openai_base_url"] = "fail"
 
-    adapters_dir = Path.home() / ".cliany-site" / "adapters"
+    cfg = get_config()
+    adapters_dir = cfg.adapters_dir
     checks["adapters_dir"] = "ok" if adapters_dir.exists() else "fail"
 
-    sessions_dir = Path.home() / ".cliany-site" / "sessions"
+    sessions_dir = cfg.sessions_dir
     checks["sessions_dir"] = "ok" if sessions_dir.exists() else "fail"
 
     if adapters_dir.exists():
@@ -85,12 +86,14 @@ async def _run_checks() -> dict:
     else:
         checks["adapters_count"] = 0
 
+    checks["config"] = cfg.to_dict()
+
     failed = [k for k, v in checks.items() if v == "fail"]
     if failed:
         return error_response(
             "DOCTOR_ISSUES",
             f"以下检查项失败: {', '.join(failed)}",
-            fix="请检查 Chrome CDP 端口（--remote-debugging-port=9222）和 LLM API key",
+            fix=f"请检查 Chrome CDP 端口（--remote-debugging-port={cfg.cdp_port}）和 LLM API key",
         ) | {"data": checks}
 
     return success_response(checks)
