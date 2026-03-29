@@ -96,14 +96,16 @@ class SafeGroup(click.Group):
 @click.option("--debug", is_flag=True, default=False, help="显示调试日志 (DEBUG)")
 @click.option("--cdp-url", default=None, help="远程 CDP 地址 (如 ws://host:9222)")
 @click.option("--headless", is_flag=True, default=False, help="以 Headless 模式启动 Chrome")
+@click.option("--sandbox", is_flag=True, default=False, help="沙箱模式：限制跨域导航和危险操作")
 @click.pass_context
-def cli(ctx, json_mode, verbose, debug, cdp_url, headless):
+def cli(ctx, json_mode, verbose, debug, cdp_url, headless, sandbox):
     """cliany-site: 将任意网站 CLI 化"""
     _ensure_dirs()
     ctx.ensure_object(dict)
     ctx.obj["json_mode"] = json_mode
     ctx.obj["cdp_url"] = cdp_url
     ctx.obj["headless"] = headless
+    ctx.obj["sandbox"] = sandbox
 
     if debug:
         log_level = LEVEL_DEBUG

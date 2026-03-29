@@ -24,7 +24,17 @@ def _session_path(domain: str) -> Path:
 
 
 def save_session_data(domain: str, data: dict) -> str:
-    """将 Session 数据 dict 写入 ~/.cliany-site/sessions/<domain>.json，返回文件路径"""
+    """将 Session 数据 dict 写入 ~/.cliany-site/sessions/<domain>.json，返回文件路径
+
+    默认使用加密存储，加密失败时回退到明文。
+    """
+    try:
+        from cliany_site.security import save_encrypted_session
+
+        return save_encrypted_session(domain, data)
+    except Exception:  # noqa: BLE001
+        logger.debug("加密存储不可用，回退到明文: domain=%s", domain)
+
     path = _session_path(domain)
     payload = {
         "domain": domain,
@@ -38,7 +48,16 @@ def save_session_data(domain: str, data: dict) -> str:
 
 
 def load_session_data(domain: str) -> dict | None:
-    """从文件加载 Session 数据，不存在时返回 None"""
+    """从文件加载 Session 数据（自动识别加密/明文），不存在时返回 None"""
+    try:
+        from cliany_site.security import load_encrypted_session
+
+        result = load_encrypted_session(domain)
+        if result is not None:
+            return result
+    except Exception:  # noqa: BLE001
+        logger.debug("加密读取失败，尝试明文: domain=%s", domain)
+
     path = _session_path(domain)
     if not path.exists():
         return None

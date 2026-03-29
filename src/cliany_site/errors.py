@@ -31,6 +31,10 @@ class WorkflowError(ClanySiteError):
     """工作流编排相关异常"""
 
 
+class SecurityError(ClanySiteError):
+    """安全相关异常（加密/沙箱/审计）"""
+
+
 # ---------------------------------------------------------------------------
 # 错误码常量（用于 JSON 信封的 error.code 字段）
 # ---------------------------------------------------------------------------
@@ -47,6 +51,9 @@ WORKFLOW_PARSE_ERROR = "WORKFLOW_PARSE_ERROR"
 WORKFLOW_FAILED = "WORKFLOW_FAILED"
 BATCH_DATA_ERROR = "BATCH_DATA_ERROR"
 BATCH_PARTIAL_FAILURE = "BATCH_PARTIAL_FAILURE"
+SANDBOX_VIOLATION = "SANDBOX_VIOLATION"
+AUDIT_FAILED = "AUDIT_FAILED"
+SESSION_DECRYPT_FAILED = "SESSION_DECRYPT_FAILED"
 
 ERROR_FIX_HINTS: dict[str, str] = {
     CDP_UNAVAILABLE: "请先启动 Chrome：google-chrome --remote-debugging-port=9222",
@@ -61,4 +68,7 @@ ERROR_FIX_HINTS: dict[str, str] = {
     WORKFLOW_FAILED: "请检查各步骤的 adapter 和命令配置",
     BATCH_DATA_ERROR: "请检查 CSV/JSON 数据文件格式",
     BATCH_PARTIAL_FAILURE: "请检查失败项的错误信息",
+    SANDBOX_VIOLATION: "沙箱策略禁止此操作，请检查域名和动作类型",
+    AUDIT_FAILED: "生成代码安全审计未通过，请检查 adapter 代码",
+    SESSION_DECRYPT_FAILED: "Session 解密失败，请尝试重新登录",
 }

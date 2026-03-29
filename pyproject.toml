@@ -6,7 +6,17 @@ build-backend = "hatchling.build"
 name = "cliany-site"
 version = "0.1.1"
 requires-python = ">=3.11"
-dependencies = ["browser-use", "click", "rich", "langchain-openai", "langchain-anthropic", "python-dotenv", "textual"]
+dependencies = [
+    "browser-use",
+    "click",
+    "rich",
+    "langchain-openai",
+    "langchain-anthropic",
+    "python-dotenv",
+    "textual",
+    "cryptography>=46.0.5",
+    "keyring>=25.7.0",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "pytest-asyncio>=0.23", "pytest-mock>=3.14"]
