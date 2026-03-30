@@ -70,6 +70,17 @@ def render_command_block(
         param_overrides=param_overrides,
     )
 
+    has_extract = any(
+        isinstance(raw_step, int)
+        and 0 <= raw_step < len(all_actions)
+        and all_actions[raw_step].action_type == "extract"
+        for raw_step in cleaned_steps
+    )
+    if has_extract:
+        success_line = f'            return success_response({{"status": "completed", "command": "{command_name}", "args": {args_payload}, "results": _extraction_results}})'
+    else:
+        success_line = f'            return success_response({{"status": "completed", "command": "{command_name}", "args": {args_payload}}})'
+
     return f'''{decorators_text}
 def {function_name}({function_signature}):
     """{description}"""
@@ -87,7 +98,7 @@ def {function_name}({function_signature}):
             await browser_session._cdp_set_cookies(session_data.get("cookies", []))
         try:
 {execution_blocks}
-            return success_response({{"status": "completed", "command": "{command_name}", "args": {args_payload}}})
+{success_line}
         except Exception as e:
             fix_hint = ""
             if hasattr(e, "to_dict"):
@@ -152,6 +163,13 @@ def render_execution_blocks(
     if not action_steps:
         return "            action_steps = []\n            await execute_action_steps(browser_session, action_steps, continue_on_error=True)"
 
+    has_extract = any(
+        isinstance(raw_step, int)
+        and 0 <= raw_step < len(all_actions)
+        and all_actions[raw_step].action_type == "extract"
+        for raw_step in action_steps
+    )
+
     groups: list[tuple[str, Any]] = []
     inline_group: list[int] = []
 
@@ -178,6 +196,9 @@ def render_execution_blocks(
     block_lines: list[str] = []
     var_counter = [0]
 
+    if has_extract:
+        block_lines.append("            _extraction_results = []")
+
     for group_type, group_data in groups:
         if group_type == "inline":
             step_indices: list[int] = group_data
@@ -190,9 +211,14 @@ def render_execution_blocks(
             if arg_parameters and raw_args:
                 sub_code = render_substitute_params_code(raw_args, arg_parameters)
                 block_lines.append(f"            {var_name} = substitute_parameters({var_name}, {sub_code})")
-            block_lines.append(
-                f"            await execute_action_steps(browser_session, {var_name}, continue_on_error=True)"
-            )
+            if has_extract:
+                block_lines.append(
+                    f"            await execute_action_steps(browser_session, {var_name}, continue_on_error=True, extraction_results=_extraction_results)"
+                )
+            else:
+                block_lines.append(
+                    f"            await execute_action_steps(browser_session, {var_name}, continue_on_error=True)"
+                )
         else:
             atom_action: ActionStep = group_data
             atom_id = atom_action.target_ref
@@ -210,9 +236,14 @@ def render_execution_blocks(
             block_lines.append(
                 f"                _atom_actions = substitute_parameters(_normalize_atom_actions({atom_var}.actions), {params_code})"
             )
-            block_lines.append(
-                "                await execute_action_steps(browser_session, _atom_actions, continue_on_error=True)"
-            )
+            if has_extract:
+                block_lines.append(
+                    "                await execute_action_steps(browser_session, _atom_actions, continue_on_error=True, extraction_results=_extraction_results)"
+                )
+            else:
+                block_lines.append(
+                    "                await execute_action_steps(browser_session, _atom_actions, continue_on_error=True)"
+                )
 
     return "\n".join(block_lines)
 
@@ -395,18 +426,21 @@ def render_action_data_literal(
         if param_overrides and raw_step in param_overrides:
             value = param_overrides[raw_step]
 
-        payload.append(
-            {
-                "type": action.action_type,
-                "ref": action.target_ref,
-                "url": action.target_url,
-                "value": value,
-                "description": action.description,
-                "target_name": action.target_name,
-                "target_role": action.target_role,
-                "target_attributes": action.target_attributes,
-            }
-        )
+        entry: dict[str, Any] = {
+            "type": action.action_type,
+            "ref": action.target_ref,
+            "url": action.target_url,
+            "value": value,
+            "description": action.description,
+            "target_name": action.target_name,
+            "target_role": action.target_role,
+            "target_attributes": action.target_attributes,
+        }
+        if action.action_type == "extract":
+            entry["selector"] = action.selector
+            entry["extract_mode"] = action.extract_mode
+            entry["fields"] = action.fields_map
+        payload.append(entry)
     return json.dumps(payload, ensure_ascii=False)
 
 

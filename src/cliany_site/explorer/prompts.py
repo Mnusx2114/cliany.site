@@ -76,12 +76,20 @@ commands 字段说明（仅当 done=true 时填写）：
 ```
 
 actions 中每个操作的字段定义：
-- type: 操作类型，必须是 click / type / select / navigate / submit / reuse_atom 之一
+- type: 操作类型，必须是 click / type / select / navigate / submit / reuse_atom / extract 之一
 - ref: 目标元素的 @ref 编号（字符串）
 - value: 【关键】对于 type 操作，value 必须是要输入的实际文本内容，不能为空字符串。对于 select 操作，value 是要选择的选项文本。
 - url: 仅 navigate 操作时使用，目标 URL
 - description: 操作的简要描述（中文）
 - reuse_atom: 仅 reuse_atom 操作时使用，格式为 {"reuse_atom": "atom_id", "parameters": {"key": "value"}}。当已有原子操作与当前步骤语义匹配时，优先使用此格式替代逐步操作。
+- extract: 仅 extract 操作时使用。需提供以下字段：
+  - selector: CSS 选择器，定位要提取的元素。使用稳定的结构化选择器（如 article.result、.search-result-item），避免含有随机哈希值的类名（如 .sc-abc123）
+  - extract_mode: 提取模式，必须是 text / list / table / attribute 之一：
+    - text: 提取单个元素的文本内容
+    - list: 提取多个同类元素，每个提取 fields 中定义的字段（最多 100 项）
+    - table: 提取表格数据（最多 500 行）
+    - attribute: 提取元素的属性值。selector 为纯 CSS 选择器（如 "a.link"），默认返回所有属性。可通过 fields 指定要提取的属性（如 {"href": "@href", "class": "@class"}）
+  - fields: 仅 list/table 模式使用。key 为字段名，value 为子元素 CSS 选择器。支持 "@attr" 语法提取属性（如 {"url": "a@href", "title": "h3"}）
 
 示例 — 在搜索框中搜索 "browser-use"：
 ```json
@@ -150,6 +158,40 @@ actions 中每个操作的字段定义：
   ],
   "done": true,
   "reasoning": "工作流完成。标题和描述是用户可变内容，通过 action_index 指定对应 action 的位置，default 记录探索时使用的真实值，代码生成阶段会自动将这些 action 的 value 替换为 {{param_name}} 占位符"
+}
+```
+
+示例 — 提取搜索结果列表（extract list 模式，结合导航和搜索）：
+```json
+{
+  "actions": [
+    {"type": "navigate", "url": "https://example.com/search?q=browser", "description": "导航到搜索结果页"},
+    {
+      "type": "extract",
+      "selector": ".search-result-item",
+      "extract_mode": "list",
+      "fields": {"title": "h3", "url": "a@href", "snippet": ".description"},
+      "description": "提取搜索结果列表"
+    }
+  ],
+  "done": false,
+  "reasoning": "导航到结果页后，使用 extract 动作抓取结构化列表数据。selector 使用稳定的类名，fields 定义各字段的子选择器"
+}
+```
+
+示例 — extract text 模式提取页面标题：
+```json
+{
+  "actions": [
+    {
+      "type": "extract",
+      "selector": "h1.page-title",
+      "extract_mode": "text",
+      "description": "提取页面主标题"
+    }
+  ],
+  "done": false,
+  "reasoning": "text 模式只需 selector，提取匹配元素的 textContent"
 }
 ```
 

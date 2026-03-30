@@ -82,6 +82,8 @@ def _normalize_atom_actions(actions):
             item["type"] = item.get("action_type")
         if "url" not in item and "target_url" in item:
             item["url"] = item.get("target_url")
+        if "fields" not in item and "fields_map" in item:
+            item["fields"] = item.get("fields_map")
         normalized.append(item)
     return normalized
 """
@@ -219,6 +221,8 @@ def _normalize_atom_actions(actions):
             item["type"] = item.get("action_type")
         if "url" not in item and "target_url" in item:
             item["url"] = item.get("target_url")
+        if "fields" not in item and "fields_map" in item:
+            item["fields"] = item.get("fields_map")
         normalized.append(item)
     return normalized
 
@@ -358,6 +362,9 @@ def save_adapter(
                             "target_name": action.target_name,
                             "target_role": action.target_role,
                             "target_attributes": action.target_attributes,
+                            "selector": action.selector,
+                            "extract_mode": action.extract_mode,
+                            "fields_map": action.fields_map,
                         }
                     )
                     if action.action_type == "reuse_atom" and action.target_ref:

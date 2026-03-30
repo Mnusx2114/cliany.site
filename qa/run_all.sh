@@ -25,6 +25,7 @@ run_script "$SCRIPT_DIR/doctor_check.sh"
 run_script "$SCRIPT_DIR/test_errors.sh"
 run_script "$SCRIPT_DIR/test_commands.sh"
 run_script "$SCRIPT_DIR/test_explore.sh"
+run_script "$SCRIPT_DIR/test_extract.sh"
 
 echo ""
 echo "========================================"

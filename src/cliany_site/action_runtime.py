@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 from cliany_site.browser.axtree import capture_axtree, serialize_axtree
 from cliany_site.config import get_config
 from cliany_site.errors import ClanySiteError
+from cliany_site.extract import build_extract_js
 from cliany_site.progress import NullProgressReporter, ProgressReporter
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,7 @@ def substitute_parameters(actions_data: list[dict[str, Any]], params: dict[str, 
         if not isinstance(action_data, dict):
             continue
 
-        for field_name in ("value", "url", "description", "target_name"):
+        for field_name in ("value", "url", "description", "target_name", "selector"):
             field_value = action_data.get(field_name)
             if not isinstance(field_value, str):
                 continue
@@ -433,6 +434,7 @@ async def execute_action_steps(
     progress: ProgressReporter | None = None,
     start_index: int = 0,
     dry_run: bool = False,
+    extraction_results: list | None = None,
 ) -> None:
     import importlib
     from datetime import datetime
@@ -484,7 +486,7 @@ async def execute_action_steps(
                 continue
 
             action_type = str(action_data.get("type", "")).lower()
-            if action_type not in ("click", "type", "select", "navigate", "submit"):
+            if action_type not in ("click", "type", "select", "navigate", "submit", "extract"):
                 continue
 
             if idx < start_index:
@@ -525,6 +527,8 @@ async def execute_action_steps(
                                 suggestion="URL 可能已变更，建议重新 explore",
                             )
                         logger.debug("[dry-run] navigate → %s (验证通过)", nav_url)
+                    elif action_type == "extract":
+                        logger.debug("[dry-run] extract 步骤 %d 跳过（不验证选择器）", idx)
                     else:
                         node = await _resolve_action_node(browser_session, action_data)
                         if node is None and action_type != "submit":
@@ -569,6 +573,44 @@ async def execute_action_steps(
                     await event.event_result(raise_if_any=not continue_on_error, raise_if_none=False)
                     if _action_has_href(action_data) or _action_opens_new_tab(action_data):
                         await _handle_post_click_navigation(browser_session, action_data)
+
+                elif action_type == "extract":
+                    await asyncio.sleep(1.5)
+
+                    selector = str(action_data.get("selector", "")).strip()
+                    extract_mode = str(action_data.get("extract_mode", "text")).strip()
+                    fields = action_data.get("fields", {}) or {}
+                    description = str(action_data.get("description", ""))
+
+                    if not selector:
+                        logger.warning("extract 动作缺少 selector，跳过")
+                    else:
+                        try:
+                            js_expr = build_extract_js(selector, extract_mode, fields if fields else None)
+                            raw_result = await browser_session.evaluate(js_expr)
+                        except Exception as exc:
+                            logger.warning("extract 执行失败 (selector=%s): %s", selector, exc)
+                            raw_result = None
+
+                        if extraction_results is not None:
+                            if raw_result is None:
+                                if extract_mode == "text":
+                                    data = {"text": ""}
+                                elif extract_mode == "attribute":
+                                    data = {}
+                                else:
+                                    data = []
+                            else:
+                                data = raw_result
+
+                            extraction_results.append(
+                                {
+                                    "step_index": idx,
+                                    "extract_mode": extract_mode,
+                                    "description": description,
+                                    "data": data,
+                                }
+                            )
 
                 else:
                     node = await _resolve_action_node(browser_session, action_data)
