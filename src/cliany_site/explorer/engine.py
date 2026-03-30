@@ -478,6 +478,11 @@ class WorkflowExplorer:
                             target_name=str(selector.get("name", "") or ""),
                             target_role=str(selector.get("role", "") or ""),
                             target_attributes=dict(selector.get("attributes", {}) or {}),
+                            selector=action_data.get("selector", "") if action_type == "extract" else "",
+                            extract_mode=action_data.get("extract_mode", "text")
+                            if action_type == "extract"
+                            else "text",
+                            fields_map=action_data.get("fields", {}) if action_type == "extract" else {},
                         )
                     result.actions.append(action)
 

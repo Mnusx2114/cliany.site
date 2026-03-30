@@ -20,6 +20,9 @@ class ActionStep:
     target_name: str = ""
     target_role: str = ""
     target_attributes: dict[str, str] = field(default_factory=dict)
+    selector: str = ""
+    extract_mode: str = "text"
+    fields_map: dict = field(default_factory=dict)
 
 
 @dataclass
