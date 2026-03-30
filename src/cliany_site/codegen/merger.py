@@ -282,6 +282,9 @@ class AdapterMerger:
                         "target_name": action.target_name,
                         "target_role": action.target_role,
                         "target_attributes": action.target_attributes,
+                        "selector": action.selector,
+                        "extract_mode": action.extract_mode,
+                        "fields_map": action.fields_map,
                     }
                 )
 
@@ -330,6 +333,9 @@ class AdapterMerger:
                             target_name=str(raw_action.get("target_name") or ""),
                             target_role=str(raw_action.get("target_role") or ""),
                             target_attributes=target_attributes,
+                            selector=str(raw_action.get("selector") or ""),
+                            extract_mode=str(raw_action.get("extract_mode") or "text"),
+                            fields_map=raw_action.get("fields_map", {}),
                         )
                     )
                     action_count += 1
