@@ -1,7 +1,10 @@
 # cliany-site v0.2 ~ v0.5 迭代计划
 
 **制定日期：** 2026-03-29  
+**完成日期：** 2026-03-30  
 **基线版本：** v0.1.1  
+**当前版本：** v0.5.0  
+**状态：** 全部完成  
 **关联决策：** [ADR-001](decisions/001-v02-iteration-plan.md)  
 **关联分析：** [头脑风暴](brainstorm-iteration-directions.md)
 
@@ -226,11 +229,28 @@ Phase 4 (生态)
 
 ## 度量指标
 
-| 指标 | v0.1.1 现状 | v0.2.0 目标 | v0.5.0 目标 |
-|------|------------|------------|------------|
-| 单元测试数量 | 0 | ≥30 | ≥100 |
-| 核心模块覆盖率 | 0% | ≥60% | ≥80% |
-| 裸 except 数量 | 6+ | 1 (SafeGroup) | 1 |
-| CI 自动化 | 无 | pytest 本地 | 全流程 GitHub Actions |
-| 最大单文件行数 | 1223 | 1223 | <400 |
-| 支持的运行环境 | 本地 macOS | 本地 macOS | macOS + Linux + Docker |
+| 指标 | v0.1.1 现状 | v0.2.0 目标 | v0.5.0 目标 | v0.5.0 实际 |
+|------|------------|------------|------------|------------|
+| 单元测试数量 | 0 | ≥30 | ≥100 | 583 |
+| 核心模块覆盖率 | 0% | ≥60% | ≥80% | — |
+| 裸 except 数量 | 6+ | 1 (SafeGroup) | 1 | 17 |
+| CI 自动化 | 无 | pytest 本地 | 全流程 GitHub Actions | GitHub Actions (ruff+mypy+pytest) |
+| 最大单文件行数 | 1223 | 1223 | <400 | 693 (action_runtime.py) |
+| 支持的运行环境 | 本地 macOS | 本地 macOS | macOS + Linux + Docker | macOS + Linux + Docker |
+
+---
+
+## 完成记录
+
+| Phase | 版本 | Commit | 完成日期 | Walkthrough |
+|-------|------|--------|----------|-------------|
+| 1 — 稳固地基 | v0.2.0 | `aa6340f` | 2026-03-29 | 4 篇 (异常/日志/配置/测试) |
+| 2 — 体验升级 | v0.3.0 | `e251275` | 2026-03-29 | 4 篇 (进度/自愈/恢复/CI) |
+| 3.4 — 重构 | v0.4.0 | `2bfb68d` | 2026-03-29 | generator-refactor |
+| 3.1 — Headless | v0.4.0 | `fe31250` | 2026-03-29 | headless-remote-cdp |
+| 3.2 — 工作流 | v0.4.0 | `4dc5be9` | 2026-03-29 | workflow-orchestration |
+| 3.3 — 批量执行 | v0.4.0 | `cf5a8b1` | 2026-03-29 | batch-execution |
+| 4.3 — 安全加固 | v0.5.0 | `601d74a` | 2026-03-29 | security-hardening |
+| 4.1 — 适配器市场 | v0.5.0 | `c429dc9` | 2026-03-29 | adapter-marketplace |
+| 4.2 — SDK + API | v0.5.0 | `0280cc7` | 2026-03-30 | python-sdk |
+| 4.4 — iframe/Shadow DOM | v0.5.0 | `105f079` | 2026-03-30 | iframe-shadow-dom |
