@@ -88,7 +88,7 @@
       <div class="container">
         <div class="section-header reveal">
           <h2 class="section-title" data-i18n="features.title">核心特性</h2>
-          <p class="section-subtitle" data-i18n="features.subtitle">十大核心能力，从探索到执行</p>
+          <p class="section-subtitle" data-i18n="features.subtitle">十六大核心能力，从探索到生态</p>
         </div>
 
         <div class="features-grid reveal">
@@ -150,6 +150,42 @@
             <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></div>
             <h3 class="feature-title" data-i18n="features.tui.title">TUI 管理界面</h3>
             <p class="feature-desc" data-i18n="features.tui.desc">基于 Textual 的终端 UI，可视化管理适配器、查看操作日志、导入导出配置，全键盘操作。</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/></svg></div>
+            <h3 class="feature-title" data-i18n="features.headless.title">Headless & 远程浏览器</h3>
+            <p class="feature-desc" data-i18n="features.headless.desc">支持 Headless Chrome 和远程 CDP 连接，可在服务器和 Docker 容器中运行，突破本地 GUI 限制。</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
+            <h3 class="feature-title" data-i18n="features.workflow.title">YAML 工作流编排</h3>
+            <p class="feature-desc" data-i18n="features.workflow.desc">通过 YAML 声明式编排多步骤工作流，支持步骤间数据传递、条件判断和重试策略。</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg></div>
+            <h3 class="feature-title" data-i18n="features.batch.title">数据驱动批量执行</h3>
+            <p class="feature-desc" data-i18n="features.batch.desc">从 CSV/JSON 读取参数列表批量执行，支持并发控制，自动生成汇总报告。</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="12" y1="2" x2="12" y2="22"/></svg></div>
+            <h3 class="feature-title" data-i18n="features.sdk.title">Python SDK & HTTP API</h3>
+            <p class="feature-desc" data-i18n="features.sdk.desc">程序化调用 from cliany_site import explore，或启动 REST API 服务，集成到任意系统。</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <h3 class="feature-title" data-i18n="features.security.title">安全加固</h3>
+            <p class="feature-desc" data-i18n="features.security.desc">Session 加密存储、沙箱执行模式、生成代码自动 AST 安全审计，全方位安全保障。</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
+            <h3 class="feature-title" data-i18n="features.marketplace.title">适配器市场</h3>
+            <p class="feature-desc" data-i18n="features.marketplace.desc">打包、发布、安装、回滚适配器，团队间共享自动化能力，版本化管理。</p>
           </div>
         </div>
       </div>
@@ -236,10 +272,14 @@
           <div class="qs-card">
             <h3 class="qs-title" data-i18n="qs.step1">Step 1: 安装</h3>
             <div class="code-block-container">
-              <pre class="code-block"><code>git clone https://github.com/pearjelly/cliany.site.git
+              <pre class="code-block"><code># PyPI 安装（推荐）
+pip install cliany-site
+
+# 或源码安装
+git clone https://github.com/pearjelly/cliany.site.git
 cd cliany-site
 pip install -e .</code></pre>
-              <button class="copy-btn" data-clipboard="git clone https://github.com/pearjelly/cliany.site.git&#10;cd cliany-site&#10;pip install -e ." aria-label="Copy to clipboard" data-i18n="copy.btn" data-i18n-aria="aria.copyBtn">复制</button>
+              <button class="copy-btn" data-clipboard="pip install cliany-site" aria-label="Copy to clipboard" data-i18n="copy.btn" data-i18n-aria="aria.copyBtn">复制</button>
             </div>
           </div>
 

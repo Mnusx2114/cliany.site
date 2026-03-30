@@ -21,7 +21,7 @@ const I18N = {
   },
 
   'features.title': { zh: '核心特性', en: 'Core Features' },
-  'features.subtitle': { zh: '十大核心能力，从探索到执行', en: 'Ten core capabilities, from exploration to execution' },
+  'features.subtitle': { zh: '十六大核心能力，从探索到生态', en: 'Sixteen core capabilities, from exploration to ecosystem' },
   'features.explore.title': { zh: '零侵入探索', en: 'Zero-Intrusion Exploration' },
   'features.explore.desc': {
     zh: '通过 Chrome CDP 协议捕获页面无障碍树（AXTree），无需注入脚本，零侵入分析网页结构。',
@@ -71,6 +71,36 @@ const I18N = {
   'features.tui.desc': {
     zh: '基于 Textual 的终端 UI，可视化管理适配器、查看操作日志、导入导出配置，全键盘操作。',
     en: 'Textual-based terminal UI for visual adapter management, activity logs, config import/export — fully keyboard-driven.'
+  },
+  'features.headless.title': { zh: 'Headless & 远程浏览器', en: 'Headless & Remote Browser' },
+  'features.headless.desc': {
+    zh: '支持 Headless Chrome 和远程 CDP 连接，可在服务器和 Docker 容器中运行，突破本地 GUI 限制。',
+    en: 'Support Headless Chrome and remote CDP connections. Run on servers and Docker containers, beyond local GUI limitations.'
+  },
+  'features.workflow.title': { zh: 'YAML 工作流编排', en: 'YAML Workflow Orchestration' },
+  'features.workflow.desc': {
+    zh: '通过 YAML 声明式编排多步骤工作流，支持步骤间数据传递、条件判断和重试策略。',
+    en: 'Declaratively orchestrate multi-step workflows via YAML, with inter-step data passing, conditional logic, and retry policies.'
+  },
+  'features.batch.title': { zh: '数据驱动批量执行', en: 'Data-Driven Batch Execution' },
+  'features.batch.desc': {
+    zh: '从 CSV/JSON 读取参数列表批量执行，支持并发控制，自动生成汇总报告。',
+    en: 'Batch execute from CSV/JSON parameter lists with concurrency control and automatic summary reports.'
+  },
+  'features.sdk.title': { zh: 'Python SDK & HTTP API', en: 'Python SDK & HTTP API' },
+  'features.sdk.desc': {
+    zh: '程序化调用 from cliany_site import explore，或启动 REST API 服务，集成到任意系统。',
+    en: 'Programmatic calls via from cliany_site import explore, or launch a REST API server for integration into any system.'
+  },
+  'features.security.title': { zh: '安全加固', en: 'Security Hardening' },
+  'features.security.desc': {
+    zh: 'Session 加密存储、沙箱执行模式、生成代码自动 AST 安全审计，全方位安全保障。',
+    en: 'Encrypted session storage, sandbox execution mode, and automatic AST security auditing of generated code.'
+  },
+  'features.marketplace.title': { zh: '适配器市场', en: 'Adapter Marketplace' },
+  'features.marketplace.desc': {
+    zh: '打包、发布、安装、回滚适配器，团队间共享自动化能力，版本化管理。',
+    en: 'Package, publish, install, and rollback adapters. Share automation capabilities across teams with version management.'
   },
 
   'how.title': { zh: '工作原理', en: 'How It Works' },
