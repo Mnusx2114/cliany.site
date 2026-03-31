@@ -83,3 +83,20 @@ python -m cliany_site
 - QA scripts are integration checks, not isolated unit tests.
 - `qa/test_commands.sh` creates a `test.com` adapter under `~/.cliany-site/adapters/` if absent.
 - Runtime assumes a user-managed Chrome instance with `--remote-debugging-port=9222`.
+
+## VERCEL 部署（重要）
+
+**官网目录**: `site/` 目录包含静态网站文件
+
+**正确部署步骤**:
+```bash
+cd site
+# 确保链接到正确的 cliany.site 项目
+vercel link --yes --project cliany.site
+# 部署到生产环境
+vercel --prod --yes
+```
+
+**关键点**: 必须使用 `--project cliany.site` 参数指定项目名称，否则会部署到错误的 `site` 项目。
+
+**官网地址**: https://www.cliany.site
