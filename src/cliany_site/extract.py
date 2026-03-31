@@ -40,17 +40,53 @@ def _build_nested_field_extract_expr(container_var: str, spec: str) -> str:
 
     if attr_name:
         escaped_attr = _escape_selector(attr_name)
+        attr_name_lower = attr_name.lower()
+
+        def _build_attr_fallback(container_expr: str) -> str:
+            if attr_name_lower in {"href", "src"}:
+                return f"({container_expr}.getAttribute('{escaped_attr}') || {container_expr}.{escaped_attr} || '')"
+
+            return f"({container_expr}.getAttribute('{escaped_attr}') || '')"
+
+        def _build_parent_scope_fallback(container_expr: str) -> str:
+            if attr_name_lower not in {"href", "src"}:
+                return ""
+
+            return (
+                f"const parent = {container_expr}.parentElement; "
+                + "if (parent) { "
+                + "const scoped = parent.querySelector('a[href], [href], [data-href], [data-url], [data-link]'); "
+                + "if (scoped) return ("
+                + "scoped.getAttribute('href') || "
+                + "scoped.getAttribute('data-href') || "
+                + "scoped.getAttribute('data-url') || "
+                + "scoped.getAttribute('data-link') || "
+                + "scoped.href || ''"
+                + "); "
+                + "} "
+            )
+
         if escaped_css:
             return (
                 "(() => { "
                 + f"const t = {container_var}.querySelector('{escaped_css}'); "
-                + f"return t ? (t.getAttribute('{escaped_attr}') || '') : ''; "
+                + f"if (t) {{ const v = {_build_attr_fallback('t')}; if (v) return v; }} "
+                + f"const direct = {container_var}; "
+                + f"if (direct) {{ const v = {_build_attr_fallback('direct')}; if (v) return v; }} "
+                + f"const nearest = {container_var}.closest('a'); "
+                + f"if (nearest) {{ const v = {_build_attr_fallback('nearest')}; if (v) return v; }} "
+                + _build_parent_scope_fallback(container_var)
+                + "return ''; "
                 + "})()"
             )
         return (
             "(() => { "
             + f"const t = {container_var}; "
-            + f"return t ? (t.getAttribute('{escaped_attr}') || '') : ''; "
+            + f"if (t) {{ const v = {_build_attr_fallback('t')}; if (v) return v; }} "
+            + f"const nearest = {container_var}.closest('a'); "
+            + f"if (nearest) {{ const v = {_build_attr_fallback('nearest')}; if (v) return v; }} "
+            + _build_parent_scope_fallback(container_var)
+            + "return ''; "
             + "})()"
         )
 
@@ -58,7 +94,9 @@ def _build_nested_field_extract_expr(container_var: str, spec: str) -> str:
         return (
             "(() => { "
             + f"const t = {container_var}.querySelector('{escaped_css}'); "
-            + "return t ? (t.textContent ? t.textContent.trim() : '') : ''; "
+            + "if (t && t.textContent) return t.textContent.trim(); "
+            + f"const direct = {container_var}; "
+            + "return direct && direct.textContent ? direct.textContent.trim() : ''; "
             + "})()"
         )
 

@@ -89,7 +89,12 @@ actions 中每个操作的字段定义：
     - list: 提取多个同类元素，每个提取 fields 中定义的字段（最多 100 项）
     - table: 提取表格数据（最多 500 行）
     - attribute: 提取元素的属性值。selector 为纯 CSS 选择器（如 "a.link"），默认返回所有属性。可通过 fields 指定要提取的属性（如 {"href": "@href", "class": "@class"}）
-  - fields: 仅 list/table 模式使用。key 为字段名，value 为子元素 CSS 选择器。支持 "@attr" 语法提取属性（如 {"url": "a@href", "title": "h3"}）
+  - fields: 仅 list/table 模式使用。key 为字段名，value 为子元素 CSS 选择器。支持 "@attr" 语法提取属性（如 {"url": "a@href", "title": "h3"}）。
+    - 处理搜索结果/资讯列表时，默认必须包含这三个字段：
+      - title: 标题文本（例如 "a.title" 或 "h3"）
+      - url: 详情链接（优先用 "@href" 或 "a@href"）
+      - snippet: 正文摘要（例如 ".desc"、".content"、"p"，若页面无摘要可用空字符串）
+    - 严禁把 title 映射成 "a@href" 这类属性值；title 必须返回可读文本。
 
 示例 — 在搜索框中搜索 "browser-use"：
 ```json
@@ -175,7 +180,26 @@ actions 中每个操作的字段定义：
     }
   ],
   "done": false,
-  "reasoning": "导航到结果页后，使用 extract 动作抓取结构化列表数据。selector 使用稳定的类名，fields 定义各字段的子选择器"
+  "reasoning": "导航到结果页后，使用 extract 动作抓取结构化列表数据。title 是文本字段，url 用 @href 提取链接，snippet 提取摘要文本"
+}
+```
+
+示例 — 提取资讯并保存 Markdown（title/url/snippet 三字段）：
+```json
+{
+  "actions": [
+    {"type": "type", "ref": "18", "value": "AI 新闻", "description": "输入搜索词"},
+    {"type": "submit", "description": "提交搜索"},
+    {
+      "type": "extract",
+      "selector": ".result-item",
+      "extract_mode": "list",
+      "fields": {"title": ".title", "url": "a@href", "snippet": ".snippet"},
+      "description": "提取结果标题、链接与摘要"
+    }
+  ],
+  "done": false,
+  "reasoning": "为后续保存 Markdown，先提取可读标题、可访问链接与摘要文本"
 }
 ```
 

@@ -189,6 +189,34 @@ count = src.count(\"fields_map\")
 assert count >= 3, f\"generator.py 应至少包含 3 处 fields_map 引用，实际 {count} 处\"
 "' "_normalize_atom_actions 两处模板和白名单都包含 fields_map"
 
+# 测试 18: extract 结果 JSON 字符串可回转为结构化数据（避免 markdown 出现 \uXXXX）
+check 'uv run python3 -c "
+from cliany_site.action_runtime import _coerce_json_like_extract_data
+raw = \"[{\\\"title\\\": \\\"\\\\u5f20\\\\u96ea\\\\u5cf0\\\", \\\"url\\\": \\\"\\\"}]\"
+data = _coerce_json_like_extract_data(raw)
+assert isinstance(data, list)
+assert \"\\\\u\" not in data[0][\"title\"]
+"' "_coerce_json_like_extract_data 可解析 JSON 字符串并恢复中文"
+
+# 测试 19: href/src 提取包含回退策略（querySelector -> direct -> closest）
+check 'uv run python3 -c "
+from cliany_site.extract import build_extract_js
+js = build_extract_js(\".card\", \"list\", {\"url\": \"a@href\"})
+assert \".closest(\" in js
+assert \".href\" in js
+assert \"getAttribute(\" in js
+"' "build_extract_js 的 href 提取包含回退链路"
+
+# 测试 20: 提示词约束包含 title/url/snippet 三字段要求
+check 'uv run python3 -c "
+from cliany_site.explorer.prompts import SYSTEM_PROMPT
+assert \"title:\" in SYSTEM_PROMPT
+assert \"url:\" in SYSTEM_PROMPT
+assert \"snippet:\" in SYSTEM_PROMPT
+assert \"严禁把 title 映射成\" in SYSTEM_PROMPT
+assert \"a@href\" in SYSTEM_PROMPT
+"' "SYSTEM_PROMPT 包含标题/链接/摘要提取约束"
+
 echo ""
 echo "=== 结果 ==="
 echo "PASS: $PASS, FAIL: $FAIL"

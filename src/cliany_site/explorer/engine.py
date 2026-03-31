@@ -440,10 +440,12 @@ class WorkflowExplorer:
         try:
             await browser_session.navigate_to(url, new_tab=False)
             reporter.on_explore_start(url, workflow_description, cfg.explore_max_steps)
+            domain = urlparse(url).netloc
 
             completed_steps: list[str] = []
             completed_steps_text = "（无）"
             final_step_count = 0
+            all_extraction_results: list = []
 
             for step_num in range(cfg.explore_max_steps):
                 step_start = time.monotonic()
@@ -470,7 +472,6 @@ class WorkflowExplorer:
                     completed_steps=completed_steps_text,
                 )
 
-                domain = urlparse(url).netloc
                 atom_inventory = build_atom_inventory_section(domain)
                 if atom_inventory:
                     prompt_text = f"{prompt_text}\n\n{atom_inventory}"
@@ -555,13 +556,8 @@ class WorkflowExplorer:
                 await execute_action_steps(
                     browser_session, actions_data, continue_on_error=True, extraction_results=_extraction_results
                 )
-                saved_path = save_extract_markdown(
-                    extraction_results=_extraction_results,
-                    domain=domain,
-                    workflow_description=workflow_description,
-                )
-                if saved_path:
-                    click.echo(f"📄 提取结果已保存: {saved_path}", err=True)
+                if _extraction_results:
+                    all_extraction_results.extend(_extraction_results)
                 step_elapsed = (time.monotonic() - step_start) * 1000
                 reporter.on_explore_step_done(step_num, len(actions_data), step_elapsed)
                 logger.info(
@@ -653,6 +649,14 @@ class WorkflowExplorer:
                         action_steps=list(range(len(result.actions))),
                     )
                 )
+
+            saved_path = save_extract_markdown(
+                extraction_results=all_extraction_results,
+                domain=domain,
+                workflow_description=workflow_description,
+            )
+            if saved_path:
+                click.echo(f"📄 提取结果已保存: {saved_path}", err=True)
         finally:
             if self._cdp is not None:
                 await self._cdp.disconnect()

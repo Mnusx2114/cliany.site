@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import copy
+import json
 import logging
 import re
 import time
@@ -75,6 +76,20 @@ def _adaptive_repair_enabled() -> bool:
 
 def _normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+
+
+def _coerce_json_like_extract_data(raw_result: Any) -> Any:
+    if not isinstance(raw_result, str):
+        return raw_result
+
+    text = raw_result.strip()
+    if not text or text[:1] not in {"[", "{"}:
+        return raw_result
+
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return raw_result
 
 
 def _parse_ref_to_index(ref: str) -> int | None:
@@ -606,7 +621,7 @@ async def execute_action_steps(
                                 else:
                                     data = []
                             else:
-                                data = raw_result
+                                data = _coerce_json_like_extract_data(raw_result)
 
                             extraction_results.append(
                                 {
