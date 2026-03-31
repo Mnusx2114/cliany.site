@@ -4,8 +4,24 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cliany-site"
-version = "0.6.0"
+version = "0.6.1"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "pearjelly", email = ""}]
+keywords = ["browser", "cli", "automation", "cdp", "llm", "workflow"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
 dependencies = [
     "browser-use",
     "click",
@@ -24,6 +40,13 @@ dev = ["ruff>=0.11", "mypy>=1.15"]
 
 [project.scripts]
 cliany-site = "cliany_site.cli:cli"
+
+[project.urls]
+Homepage = "https://www.cliany.site"
+Repository = "https://github.com/pearjelly/cliany.site"
+Documentation = "https://www.cliany.site"
+"Bug Tracker" = "https://github.com/pearjelly/cliany.site/issues"
+Changelog = "https://github.com/pearjelly/cliany.site/blob/master/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cliany_site"]
