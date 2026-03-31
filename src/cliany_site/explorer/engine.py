@@ -319,16 +319,20 @@ def _is_retryable_error(exc: Exception) -> bool:
 
 async def _invoke_llm_with_retry(
     llm: Any,
-    prompt: str,
+    prompt: Any,
     *,
     max_attempts: int = 3,
     base_delay: float = 2.0,
     backoff_factor: float = 2.0,
 ) -> Any:
-    """带指数退避重试的 LLM 调用。仅对 5xx/429 等瞬时错误重试。"""
+    """带指数退避重试的 LLM 调用。支持纯文本和多模态消息。"""
     for attempt in range(max_attempts):
         try:
-            return await llm.ainvoke(prompt)
+            if isinstance(prompt, str):
+                return await llm.ainvoke(prompt)
+            else:
+                messages = [prompt] if not isinstance(prompt, list) else prompt
+                return await llm.ainvoke(messages)
         except Exception as exc:
             if not _is_retryable_error(exc) or attempt >= max_attempts - 1:
                 raise
@@ -476,12 +480,47 @@ class WorkflowExplorer:
                 if atom_inventory:
                     prompt_text = f"{prompt_text}\n\n{atom_inventory}"
 
+                screenshot_data = tree.get("screenshot", b"")
+                if cfg.vision_enabled and screenshot_data:
+                    from cliany_site.browser.screenshot import (
+                        annotate_screenshot_with_som,
+                        enrich_selector_map_with_bounds,
+                    )
+                    from cliany_site.explorer.prompts import VISION_SUPPLEMENT_PROMPT
+                    from cliany_site.explorer.vision import build_multimodal_message
+
+                    enriched_map = await enrich_selector_map_with_bounds(
+                        browser_session,
+                        selector_map,
+                    )
+                    annotated_screenshot, _ref_to_label = annotate_screenshot_with_som(
+                        screenshot_data,
+                        enriched_map,
+                        format=cfg.screenshot_format,
+                        quality=cfg.screenshot_quality,
+                        max_labels=cfg.vision_som_max_labels,
+                    )
+
+                    full_text = f"{SYSTEM_PROMPT}\n\n{prompt_text}\n\n{VISION_SUPPLEMENT_PROMPT}"
+                    llm_input: Any = build_multimodal_message(
+                        full_text,
+                        annotated_screenshot or screenshot_data,
+                        screenshot_format=cfg.screenshot_format,
+                    )
+                else:
+                    llm_input = f"{SYSTEM_PROMPT}\n\n{prompt_text}"
+
                 try:
-                    logger.debug("步骤 %d: 调用 LLM (page=%s)", step_num + 1, tree.get("url", ""))
+                    logger.debug(
+                        "步骤 %d: 调用 LLM (page=%s vision=%s)",
+                        step_num + 1,
+                        tree.get("url", ""),
+                        bool(cfg.vision_enabled and screenshot_data),
+                    )
                     reporter.on_explore_llm_start(step_num)
                     response = await _invoke_llm_with_retry(
                         llm,
-                        f"{SYSTEM_PROMPT}\n\n{prompt_text}",
+                        llm_input,
                         max_attempts=cfg.llm_retry_max_attempts,
                         base_delay=cfg.llm_retry_base_delay,
                         backoff_factor=cfg.llm_retry_backoff_factor,

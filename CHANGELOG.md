@@ -7,6 +7,28 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-31
+
+### 新增
+- **多模态感知系统**：截图 + Vision LLM 双通道感知，提升探索和元素定位成功率
+- 新增 `browser/screenshot.py` 截图采集模块，支持 CDP 截图和 base64 编码
+- 新增 SoM（Set-of-Mark）标注引擎，在截图上绘制带编号的元素标签
+- 新增 `explorer/vision.py` 多模态消息构建模块，支持 LangChain 图文混合消息
+- 新增 Vision 视觉定位能力，作为元素解析 L3 层兜底策略
+- 新增 5 个 Vision 配置项：`CLIANY_VISION_ENABLED`、`CLIANY_SCREENSHOT_FORMAT`、`CLIANY_SCREENSHOT_QUALITY`、`CLIANY_VISION_MIN_CONFIDENCE`、`CLIANY_VISION_SOM_MAX_LABELS`
+- 新增 `Pillow` 可选依赖组 `[vision]`，用于 SoM 图像标注
+- 新增 17 个测试用例覆盖截图和 Vision 模块
+
+### 变更
+- `capture_axtree()` 在 vision_enabled 时同步采集截图数据
+- `_invoke_llm_with_retry()` 支持 LangChain Message 对象（图文混合输入）
+- 探索循环在 Vision 模式下自动构建多模态 prompt
+- 元素解析策略扩展为 4 层：L0 直接匹配 → L1 模糊打分 → L2 自适应修复 → L3 Vision 定位
+
+### 文档
+- 添加 v0.7.0 多模态感知实施计划文档
+- 添加 v0.7.0 实施 walkthrough 文档
+
 ## [0.6.2] - 2026-03-31
 
 ### 新增
@@ -43,6 +65,8 @@
 - 修复合并周期保留 selector/extract_mode/fields_map 的问题
 - 修正 QA 测试断言与实际 API 对齐
 
-[Unreleased]: https://github.com/pearjelly/cliany.site/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/pearjelly/cliany.site/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/pearjelly/cliany.site/compare/v0.6.2...v0.7.0
+[0.6.2]: https://github.com/pearjelly/cliany.site/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/pearjelly/cliany.site/compare/v0.5.1...v0.6.1
 [0.5.1]: https://github.com/pearjelly/cliany.site/releases/tag/v0.5.1

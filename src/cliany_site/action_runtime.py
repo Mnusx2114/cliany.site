@@ -253,6 +253,103 @@ def _extract_repair_selector_refs(parsed_response: Any) -> list[str]:
     return normalized
 
 
+async def _attempt_vision_locate(
+    browser_session: Any,
+    action_data: dict[str, Any],
+) -> Any | None:
+    import importlib
+
+    from cliany_site.browser.axtree import capture_axtree, serialize_axtree
+    from cliany_site.browser.screenshot import (
+        annotate_screenshot_with_som,
+        capture_screenshot,
+        enrich_selector_map_with_bounds,
+    )
+    from cliany_site.config import get_config
+    from cliany_site.explorer.vision import (
+        build_vision_locate_message,
+        parse_vision_locate_response,
+    )
+
+    cfg = get_config()
+    if not cfg.vision_enabled:
+        return None
+
+    try:
+        engine_module = importlib.import_module("cliany_site.explorer.engine")
+        get_llm = getattr(engine_module, "_get_llm", None)
+        if not callable(get_llm):
+            return None
+        llm = get_llm(role="explore")
+    except (ImportError, OSError, ValueError):
+        return None
+
+    screenshot_data = await capture_screenshot(
+        browser_session,
+        format=cfg.screenshot_format,
+        quality=cfg.screenshot_quality,
+    )
+    if not screenshot_data:
+        return None
+
+    tree = await capture_axtree(browser_session)
+    selector_map = tree.get("selector_map", {})
+    element_tree_text = serialize_axtree(tree)
+
+    enriched_map = await enrich_selector_map_with_bounds(browser_session, selector_map)
+    annotated, _ref_to_label = annotate_screenshot_with_som(
+        screenshot_data,
+        enriched_map,
+        format=cfg.screenshot_format,
+        quality=cfg.screenshot_quality,
+        max_labels=cfg.vision_som_max_labels,
+    )
+
+    message = build_vision_locate_message(
+        action_data,
+        annotated or screenshot_data,
+        element_tree_text,
+        screenshot_format=cfg.screenshot_format,
+    )
+
+    try:
+        response = await llm.ainvoke([message])
+        response_text = str(getattr(response, "content", response))
+        parsed = parse_vision_locate_response(response_text)
+    except (RuntimeError, OSError, TypeError, ValueError) as exc:
+        logger.debug("Vision 定位 LLM 调用失败: %s", exc)
+        return None
+
+    ref = parsed.get("ref", "")
+    confidence = parsed.get("confidence", 0)
+    reasoning = parsed.get("reasoning", "")
+
+    if not ref or confidence < cfg.vision_min_confidence:
+        logger.debug(
+            "Vision 定位置信度不足: ref=%s confidence=%.2f reason=%s",
+            ref,
+            confidence,
+            reasoning,
+        )
+        return None
+
+    ref_index = _parse_ref_to_index(ref)
+    if ref_index is None:
+        return None
+
+    try:
+        node = await browser_session.get_element_by_index(ref_index)
+        logger.info(
+            "Vision 定位成功: ref=%s confidence=%.2f reason=%s",
+            ref,
+            confidence,
+            reasoning,
+        )
+        return node
+    except (IndexError, KeyError, RuntimeError, OSError):
+        return None
+
+
 async def _attempt_adaptive_repair(browser_session: Any, action_data: dict[str, Any]) -> Any | None:
     import importlib
 
@@ -435,6 +532,10 @@ async def _resolve_action_node(browser_session: Any, action_data: dict[str, Any]
         repaired = await _attempt_adaptive_repair(browser_session, action_data)
         if repaired is not None:
             return repaired
+
+    vision_result = await _attempt_vision_locate(browser_session, action_data)
+    if vision_result is not None:
+        return vision_result
 
     return None
 

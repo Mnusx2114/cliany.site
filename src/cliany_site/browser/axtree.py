@@ -115,6 +115,16 @@ async def capture_axtree(browser_session: Any) -> dict:
     except (RuntimeError, OSError, AttributeError):
         pass
 
+    screenshot_data = b""
+    if cfg.vision_enabled:
+        from cliany_site.browser.screenshot import capture_screenshot
+
+        screenshot_data = await capture_screenshot(
+            browser_session,
+            format=cfg.screenshot_format,
+            quality=cfg.screenshot_quality,
+        )
+
     return {
         "element_tree": element_tree_text,
         "selector_map": selector_map,
@@ -122,6 +132,7 @@ async def capture_axtree(browser_session: Any) -> dict:
         "title": title,
         "iframe_count": nested_stats["iframe_count"],
         "shadow_root_count": nested_stats["shadow_root_count"],
+        "screenshot": screenshot_data,
     }
 
 

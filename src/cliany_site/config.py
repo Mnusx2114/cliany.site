@@ -56,6 +56,13 @@ class ClanySiteConfig:
     adaptive_repair_enabled: bool = False
     adaptive_repair_max_attempts: int = 3
 
+    # Vision 多模态配置
+    vision_enabled: bool = False
+    screenshot_format: str = "jpeg"
+    screenshot_quality: int = 75
+    vision_min_confidence: float = 0.6
+    vision_som_max_labels: int = 50
+
     explore_max_steps: int = 10
 
     cross_origin_iframes: bool = True
@@ -100,6 +107,11 @@ class ClanySiteConfig:
             "llm_retry_backoff_factor": self.llm_retry_backoff_factor,
             "adaptive_repair_enabled": self.adaptive_repair_enabled,
             "adaptive_repair_max_attempts": self.adaptive_repair_max_attempts,
+            "vision_enabled": self.vision_enabled,
+            "screenshot_format": self.screenshot_format,
+            "screenshot_quality": self.screenshot_quality,
+            "vision_min_confidence": self.vision_min_confidence,
+            "vision_som_max_labels": self.vision_som_max_labels,
             "explore_max_steps": self.explore_max_steps,
             "cross_origin_iframes": self.cross_origin_iframes,
             "max_iframes": self.max_iframes,
@@ -129,6 +141,11 @@ def load_config() -> ClanySiteConfig:
         llm_retry_backoff_factor=_env_float("CLIANY_LLM_RETRY_BACKOFF_FACTOR", 2.0),
         adaptive_repair_enabled=_env_bool("CLIANY_ADAPTIVE_REPAIR", False),
         adaptive_repair_max_attempts=_env_int("CLIANY_ADAPTIVE_REPAIR_MAX_ATTEMPTS", 3),
+        vision_enabled=_env_bool("CLIANY_VISION_ENABLED", False),
+        screenshot_format=os.environ.get("CLIANY_SCREENSHOT_FORMAT", "jpeg"),
+        screenshot_quality=_env_int("CLIANY_SCREENSHOT_QUALITY", 75),
+        vision_min_confidence=_env_float("CLIANY_VISION_MIN_CONFIDENCE", 0.6),
+        vision_som_max_labels=_env_int("CLIANY_VISION_SOM_MAX_LABELS", 50),
         explore_max_steps=_env_int("CLIANY_EXPLORE_MAX_STEPS", 10),
         cross_origin_iframes=_env_bool("CLIANY_CROSS_ORIGIN_IFRAMES", True),
         max_iframes=_env_int("CLIANY_MAX_IFRAMES", 100),
