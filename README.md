@@ -217,9 +217,11 @@ cliany-site/src/cliany_site/
 - **沙箱模式**：`--sandbox` 限制 navigate 同域、禁止 `javascript:` / `file://` / `data:` URL、禁止文件下载
 - **代码审计**：codegen 输出自动 AST 扫描，检测 `eval` / `exec` / `os.system` / `subprocess` 等危险调用
 
-## 贡献指南
+## 贡献指南 / Contributing
 
-欢迎贡献！请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详细流程。
+欢迎参与贡献！请查阅 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发环境搭建、代码规范和 PR 流程。
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR workflow.
 
 ## 限制说明
 
@@ -229,8 +231,9 @@ cliany-site/src/cliany_site/
 - Session 不跨浏览器 Profile 共享
 - 跨域 iframe 默认启用递归采集（可通过 `CLIANY_CROSS_ORIGIN_IFRAMES` 配置）
 
-## 更新日志
+## 更新日志 / Changelog
 
+查看完整更新日志：[CHANGELOG.md](CHANGELOG.md)
 
-详细版本记录见 [CHANGELOG.md](CHANGELOG.md)。
+See full changelog: [CHANGELOG.md](CHANGELOG.md)
 
