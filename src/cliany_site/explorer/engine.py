@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -15,6 +16,7 @@ import click
 from cliany_site.action_runtime import execute_action_steps, normalize_navigation_url
 from cliany_site.browser.axtree import capture_axtree, serialize_axtree
 from cliany_site.browser.cdp import CDPConnection
+from cliany_site.browser.screenshot import capture_screenshot
 from cliany_site.browser.selector import format_selector_candidates_section
 from cliany_site.config import get_config
 from cliany_site.explorer.models import (
@@ -22,6 +24,7 @@ from cliany_site.explorer.models import (
     CommandSuggestion,
     ExploreResult,
     PageInfo,
+    StepRecord,
 )
 from cliany_site.explorer.prompts import (
     EXPLORE_PROMPT_TEMPLATE,
@@ -422,6 +425,7 @@ class WorkflowExplorer:
         workflow_description: str,
         port: int | None = None,
         progress: ProgressReporter | None = None,
+        record: bool = True,
     ) -> ExploreResult:
         cfg = get_config()
         if port is None:
@@ -440,11 +444,30 @@ class WorkflowExplorer:
             raise ConnectionError(f"Chrome CDP 不可用 (port={port})")
 
         browser_session = await self._cdp.connect(port)
+        domain = urlparse(url).netloc or "unknown"
+
+        recording_manifest = None
+        recording_manager = None
+        if record:
+            try:
+                from cliany_site.explorer.recording import RecordingManager
+
+                session_id = f"sess-{int(time.time() * 1000)}"
+                recording_manager = RecordingManager()
+                recording_manifest = recording_manager.start_recording(
+                    domain,
+                    url,
+                    workflow_description,
+                    session_id,
+                )
+            except Exception as e:
+                logger.warning(f"录像初始化失败，将跳过录像: {e}")
+
+        explore_completed = False
 
         try:
             await browser_session.navigate_to(url, new_tab=False)
             reporter.on_explore_start(url, workflow_description, cfg.explore_max_steps)
-            domain = urlparse(url).netloc
 
             completed_steps: list[str] = []
             completed_steps_text = "（无）"
@@ -534,7 +557,8 @@ class WorkflowExplorer:
                             "（例如 https://sub2api.chinahrt.com/v1）"
                         ) from e
                     raise
-                parsed = _parse_llm_response(_to_text(response.content))
+                response_text = _to_text(response.content)
+                parsed = _parse_llm_response(response_text)
 
                 actions_data = _sanitize_actions_data(parsed.get("actions", []), tree.get("url", ""))
                 reporter.on_explore_llm_done(step_num, len(actions_data))
@@ -597,6 +621,35 @@ class WorkflowExplorer:
                 )
                 if _extraction_results:
                     all_extraction_results.extend(_extraction_results)
+
+                if recording_manager is not None and recording_manifest is not None:
+                    try:
+                        step_screenshot = await capture_screenshot(
+                            browser_session,
+                            format="png",
+                            quality=cfg.screenshot_quality,
+                            full_page=False,
+                        )
+                        step_axtree = await capture_axtree(browser_session)
+                        step_record = StepRecord(
+                            step_index=step_num,
+                            action_data={
+                                "actions": actions_data,
+                                "done": bool(parsed.get("done", False)),
+                                "next_url": str(parsed.get("next_url", "") or ""),
+                            },
+                            llm_response_raw=response_text,
+                            timestamp=datetime.now(UTC).isoformat(),
+                        )
+                        recording_manager.save_step(
+                            manifest=recording_manifest,
+                            step_record=step_record,
+                            screenshot_bytes=step_screenshot or None,
+                            axtree_json=step_axtree,
+                        )
+                    except Exception as e:
+                        logger.warning("步骤录像保存失败，将继续探索: %s", e)
+
                 step_elapsed = (time.monotonic() - step_start) * 1000
                 reporter.on_explore_step_done(step_num, len(actions_data), step_elapsed)
                 logger.info(
@@ -696,7 +749,21 @@ class WorkflowExplorer:
             )
             if saved_path:
                 click.echo(f"📄 提取结果已保存: {saved_path}", err=True)
+            explore_completed = True
+        except Exception as e:
+            logger.debug("探索异常，准备以失败态结束录像: %s", e)
+            if recording_manager is not None and recording_manifest is not None:
+                try:
+                    recording_manager.finalize(recording_manifest, completed=False)
+                except Exception as finalize_error:
+                    logger.warning("录像结束写入失败(失败态): %s", finalize_error)
+            raise
         finally:
+            if explore_completed and recording_manager is not None and recording_manifest is not None:
+                try:
+                    recording_manager.finalize(recording_manifest, completed=True)
+                except Exception as finalize_error:
+                    logger.warning("录像结束写入失败(完成态): %s", finalize_error)
             if self._cdp is not None:
                 await self._cdp.disconnect()
 
