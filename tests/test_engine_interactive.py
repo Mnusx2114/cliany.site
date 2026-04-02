@@ -203,7 +203,7 @@ class TestKeyboardInterrupt:
 
     @pytest.mark.asyncio
     async def test_keyboard_interrupt_saves_partial_result(self, mocker):
-        """第 N 步 LLM 抛 KeyboardInterrupt，验证 AdapterGenerator.generate() 被调用含部分结果"""
+        """第 N 步 LLM 抛 KeyboardInterrupt，验证 save_adapter() 被调用含部分结果"""
         # 第一步正常返回，第二步 LLM 抛 KeyboardInterrupt
         parse_results = [
             {
@@ -225,22 +225,34 @@ class TestKeyboardInterrupt:
             ],
         )
 
+        # Mock AdapterGenerator.generate 返回代码
         generator_mock = MagicMock()
+        generator_mock.generate.return_value = "# generated code"
         mocker.patch(
             "cliany_site.explorer.engine.AdapterGenerator",
             return_value=generator_mock,
         )
 
+        # Mock save_adapter
+        save_adapter_mock = mocker.patch("cliany_site.explorer.engine.save_adapter")
+
         explorer = WorkflowExplorer(interactive=False)
         with pytest.raises(KeyboardInterrupt):
             await explorer.explore("https://example.com/start", "中断测试", record=False)
 
-        # 验证 AdapterGenerator().generate() 被调用，且包含部分结果
+        # 验证 AdapterGenerator().generate() 被调用
         generator_mock.generate.assert_called_once()
         call_kwargs = generator_mock.generate.call_args
         partial_result = call_kwargs.args[0] if call_kwargs.args else call_kwargs.kwargs.get("result")
         assert partial_result is not None
         assert len(partial_result.actions) == 1  # 只有第一步的 action
+
+        # 验证 save_adapter 被调用
+        save_adapter_mock.assert_called_once()
+        call_args = save_adapter_mock.call_args
+        assert call_args.args[0] == "example.com"  # domain
+        assert call_args.args[1] == "# generated code"  # code
+        assert call_args.kwargs["explore_result"] is partial_result
 
     @pytest.mark.asyncio
     async def test_keyboard_interrupt_finalizes_recording(self, mocker):

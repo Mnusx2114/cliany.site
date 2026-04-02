@@ -18,7 +18,7 @@ from cliany_site.browser.axtree import capture_axtree, serialize_axtree
 from cliany_site.browser.cdp import CDPConnection
 from cliany_site.browser.screenshot import capture_screenshot
 from cliany_site.browser.selector import format_selector_candidates_section
-from cliany_site.codegen.generator import AdapterGenerator
+from cliany_site.codegen.generator import AdapterGenerator, save_adapter
 from cliany_site.config import get_config
 from cliany_site.explorer.models import (
     ActionStep,
@@ -872,7 +872,8 @@ class WorkflowExplorer:
         except KeyboardInterrupt:
             n_commands = len(result.commands)
             try:
-                AdapterGenerator().generate(result, domain)
+                code = AdapterGenerator().generate(result, domain)
+                save_adapter(domain, code, explore_result=result)
             except Exception as gen_err:
                 logger.warning("Ctrl-C 中断后保存部分适配器失败: %s", gen_err)
             if recording_manager is not None and recording_manifest is not None:
