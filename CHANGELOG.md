@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-02
+
+### 新增
+- **会话式探索**：支持交互式探索 (`--interactive`)，每步 LLM 规划后暂停，支持 CONFIRM/SKIP/MODIFY/ROLLBACK
+- **增量扩展探索**：支持 `--extend <domain>`，加载已有适配器 metadata 作为 LLM 上下文，实现精准补全
+- **探索录像系统**：自动保存截图、AXTree 和动作序列到 `~/.cliany-site/recordings/`
+- **录像回放命令**：新增 `replay <domain>` 命令，Rich 终端回放探索全过程，支持 `--step` 逐步回放
+- **优雅中断保护**：Ctrl-C 中断后自动保存已探索的中间结果，支持后续合并
+
 ## [0.7.1] - 2026-04-02
 
 ### 文档
@@ -70,8 +79,9 @@
 - 修复合并周期保留 selector/extract_mode/fields_map 的问题
 - 修正 QA 测试断言与实际 API 对齐
 
-[Unreleased]: https://github.com/pearjelly/cliany.site/compare/v0.7.0...HEAD
-[0.7.0]: https://github.com/pearjelly/cliany.site/compare/v0.6.2...v0.7.0
+[Unreleased]: https://github.com/pearjelly/cliany.site/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/pearjelly/cliany.site/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/pearjelly/cliany.site/compare/v0.7.0...v0.7.1
 [0.6.2]: https://github.com/pearjelly/cliany.site/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/pearjelly/cliany.site/compare/v0.5.1...v0.6.1
 [0.5.1]: https://github.com/pearjelly/cliany.site/releases/tag/v0.5.1
