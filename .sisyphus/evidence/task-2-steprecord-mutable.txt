@@ -1,0 +1,3 @@
+初始 rolled_back: False
+修改后 rolled_back: True
+结论: rolled_back 默认=False，可修改=True

@@ -44,3 +44,33 @@ class ExploreResult:
         import dataclasses
 
         return dataclasses.asdict(self)
+
+
+@dataclass
+class TurnSnapshot:
+    turn_index: int
+    actions_before_count: int
+    pages_before_count: int
+    browser_history_index: int
+
+
+@dataclass
+class StepRecord:
+    step_index: int
+    action_data: dict
+    llm_response_raw: str
+    timestamp: str
+    screenshot_path: str | None = None
+    axtree_snapshot_path: str | None = None
+    rolled_back: bool = False
+
+
+@dataclass
+class RecordingManifest:
+    domain: str
+    session_id: str
+    url: str
+    workflow: str
+    started_at: str
+    steps: list = field(default_factory=list)
+    completed: bool = False
