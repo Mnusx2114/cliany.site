@@ -469,22 +469,6 @@ class WorkflowExplorer:
             # 快速失败：在初始化时验证 domain 存在
             self._extend_context = load_existing_adapter_context(extend_domain)
 
-    async def handle_rollback(
-        self,
-        browser_session: Any,
-        turn_snapshot: TurnSnapshot,
-        result: ExploreResult,
-    ) -> None:
-        _ = browser_session
-        _ = result
-        logger.info(
-            "收到回退请求（预留接口）: turn=%d actions_before=%d pages_before=%d history=%d",
-            turn_snapshot.turn_index,
-            turn_snapshot.actions_before_count,
-            turn_snapshot.pages_before_count,
-            turn_snapshot.browser_history_index,
-        )
-
     async def explore(
         self,
         url: str,
@@ -672,14 +656,16 @@ class WorkflowExplorer:
                                 if isinstance(ad, dict):
                                     ad[decision.field] = decision.new_value or ""
                     elif decision.decision_type == DecisionType.ROLLBACK:
-                        await self.handle_rollback(
-                            browser_session=browser_session,
-                            turn_snapshot=turn_snapshot,
-                            result=result,
+                        rollback_success = await interactive_ctrl.handle_rollback(
+                            turn_snapshot,
+                            result,
+                            browser_session,
+                            recording_manager=recording_manager,
+                            recording_manifest=recording_manifest,
                         )
-                        step_elapsed = (time.monotonic() - step_start) * 1000
-                        reporter.on_explore_step_done(step_num, 0, step_elapsed)
-                        logger.info("步骤 %d 回退请求已记录，跳过本轮执行", step_num + 1)
+                        if not rollback_success:
+                            click.echo("⚠️ 已在第一步，无法继续回退", err=True)
+                        reporter.on_explore_step_done(step_num, 0, 0)
                         continue
 
                 for action_data in actions_data:

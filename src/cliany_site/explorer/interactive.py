@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
 from rich.panel import Panel
+
+from cliany_site.browser.axtree import capture_axtree
+
+if TYPE_CHECKING:
+    from cliany_site.explorer.models import ExploreResult, TurnSnapshot
+
+
+logger = logging.getLogger(__name__)
 
 
 class DecisionType(Enum):
@@ -87,3 +97,113 @@ class InteractiveController:
             field=field,
             new_value=new_value,
         )
+
+    @staticmethod
+    def _extract_history_data(history: Any) -> tuple[int | None, list[Any]]:
+        if isinstance(history, dict):
+            current_index = history.get("currentIndex")
+            entries = history.get("entries")
+        else:
+            current_index = getattr(history, "currentIndex", None)
+            entries = getattr(history, "entries", None)
+
+        if not isinstance(entries, list):
+            entries = []
+        if not isinstance(current_index, int):
+            current_index = None
+        return current_index, entries
+
+    @staticmethod
+    def _extract_history_entry_id(entry: Any) -> int | None:
+        if isinstance(entry, dict):
+            entry_id = entry.get("id")
+        else:
+            entry_id = getattr(entry, "id", None)
+        return entry_id if isinstance(entry_id, int) else None
+
+    async def _try_browser_back(self, browser_session: Any, fallback_url: str) -> None:
+        session_id: str | None = None
+        try:
+            get_session = getattr(browser_session, "get_or_create_cdp_session", None)
+            if callable(get_session):
+                maybe_session = get_session()
+                if asyncio.iscoroutine(maybe_session):
+                    cdp_session = await maybe_session
+                else:
+                    cdp_session = maybe_session
+                maybe_session_id = getattr(cdp_session, "session_id", None)
+                session_id = str(maybe_session_id) if maybe_session_id else None
+        except Exception as exc:
+            logger.warning("获取 CDP session 失败，将继续尝试回退: %s", exc)
+
+        cdp_client = getattr(browser_session, "cdp_client", None)
+        send_api = getattr(cdp_client, "send", None)
+        page_api = getattr(send_api, "Page", None)
+
+        used_history_back = False
+        if page_api is not None and callable(getattr(page_api, "getNavigationHistory", None)):
+            used_history_back = True
+            history = await page_api.getNavigationHistory(session_id=session_id)
+            current_index, entries = self._extract_history_data(history)
+            if current_index is not None and current_index > 0 and current_index <= len(entries) - 1:
+                previous_entry = entries[current_index - 1]
+                entry_id = self._extract_history_entry_id(previous_entry)
+                if entry_id is not None:
+                    await page_api.navigateToHistoryEntry({"entryId": entry_id}, session_id=session_id)
+                    return
+            logger.warning("浏览器历史回退不可用：未找到上一个 history entry")
+
+        if fallback_url:
+            if page_api is not None and callable(getattr(page_api, "navigate", None)):
+                await page_api.navigate({"url": fallback_url}, session_id=session_id)
+                return
+
+            navigate_to = getattr(browser_session, "navigate_to", None)
+            if callable(navigate_to):
+                maybe_navigate = navigate_to(fallback_url, new_tab=False)
+                if asyncio.iscoroutine(maybe_navigate):
+                    await maybe_navigate
+                return
+
+        if used_history_back:
+            logger.warning("浏览器回退失败：history back 与 fallback 导航均未生效")
+        else:
+            logger.warning("浏览器回退失败：CDP Page.getNavigationHistory 不可用且 fallback 导航不可用")
+
+    async def handle_rollback(
+        self,
+        snapshot: "TurnSnapshot",
+        result: "ExploreResult",
+        browser_session,
+        recording_manager=None,
+        recording_manifest=None,
+    ) -> bool:
+        if snapshot.actions_before_count == 0:
+            self.console.print("[yellow]已在第一步，无法回退[/yellow]")
+            logger.info("回退请求被拒绝：已在第一步")
+            return False
+
+        fallback_url = ""
+        if snapshot.pages_before_count > 0 and snapshot.pages_before_count <= len(result.pages):
+            fallback_url = result.pages[snapshot.pages_before_count - 1].url
+
+        result.actions = result.actions[: snapshot.actions_before_count]
+        result.pages = result.pages[: snapshot.pages_before_count]
+
+        try:
+            await self._try_browser_back(browser_session, fallback_url)
+        except Exception as exc:
+            logger.warning("执行浏览器回退失败（继续流程）: %s", exc)
+
+        try:
+            await capture_axtree(browser_session)
+        except Exception as exc:
+            logger.warning("回退后 AXTree 捕获失败（继续流程）: %s", exc)
+
+        if recording_manager is not None and recording_manifest is not None:
+            try:
+                recording_manager.mark_rolled_back(recording_manifest, snapshot.turn_index)
+            except Exception as exc:
+                logger.warning("标记录像回退步骤失败（继续流程）: %s", exc)
+
+        return True

@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+
 """TDD 测试 — InteractiveController 用户确认循环骨架
 
 测试清单（8+ 个）：
@@ -15,11 +17,13 @@
 """
 
 import sys
+from types import SimpleNamespace
 
 import click
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from cliany_site.explorer.models import ActionStep, ExploreResult, PageInfo, TurnSnapshot
 from cliany_site.explorer.interactive import (
     DecisionType,
     InteractiveController,
@@ -233,3 +237,112 @@ async def test_rollback_aliases(alias, monkeypatch):
     result = await controller.prompt_action_confirmation([], "page")
 
     assert result.decision_type == DecisionType.ROLLBACK
+
+
+def _make_browser_session_for_rollback() -> tuple[MagicMock, MagicMock]:
+    page_api = MagicMock()
+    page_api.getNavigationHistory = AsyncMock(
+        return_value={
+            "currentIndex": 1,
+            "entries": [
+                {"id": 101, "url": "https://example.com/prev"},
+                {"id": 202, "url": "https://example.com/current"},
+            ],
+        }
+    )
+    page_api.navigateToHistoryEntry = AsyncMock()
+    page_api.navigate = AsyncMock()
+
+    browser_session = MagicMock()
+    browser_session.get_or_create_cdp_session = AsyncMock(return_value=SimpleNamespace(session_id="sid-1"))
+    browser_session.cdp_client = SimpleNamespace(send=SimpleNamespace(Page=page_api))
+    browser_session.navigate_to = AsyncMock()
+    return browser_session, page_api
+
+
+@pytest.mark.asyncio
+async def test_rollback_restores_actions():
+    controller = make_controller()
+    browser_session, page_api = _make_browser_session_for_rollback()
+    result = ExploreResult(
+        actions=[
+            ActionStep(action_type="click", page_url="https://example.com", description="step-1"),
+            ActionStep(action_type="type", page_url="https://example.com", description="step-2"),
+            ActionStep(action_type="click", page_url="https://example.com", description="step-3"),
+        ],
+        pages=[PageInfo(url="https://example.com", title="Example")],
+    )
+    snapshot = TurnSnapshot(turn_index=2, actions_before_count=2, pages_before_count=1, browser_history_index=2)
+
+    with patch("cliany_site.explorer.interactive.capture_axtree", new_callable=AsyncMock) as capture_mock:
+        ok = await controller.handle_rollback(snapshot, result, browser_session)
+
+    assert ok is True
+    assert len(result.actions) == 2
+    assert [a.description for a in result.actions] == ["step-1", "step-2"]
+    page_api.getNavigationHistory.assert_awaited_once()
+    page_api.navigateToHistoryEntry.assert_awaited_once_with({"entryId": 101}, session_id="sid-1")
+    capture_mock.assert_awaited_once_with(browser_session)
+
+
+@pytest.mark.asyncio
+async def test_rollback_first_step_returns_false():
+    controller = make_controller()
+    browser_session, page_api = _make_browser_session_for_rollback()
+    result = ExploreResult()
+    snapshot = TurnSnapshot(turn_index=0, actions_before_count=0, pages_before_count=0, browser_history_index=0)
+
+    with patch("cliany_site.explorer.interactive.capture_axtree", new_callable=AsyncMock) as capture_mock:
+        ok = await controller.handle_rollback(snapshot, result, browser_session)
+
+    assert ok is False
+    controller.console.print.assert_called_once()
+    page_api.getNavigationHistory.assert_not_called()
+    capture_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_rollback_restores_pages():
+    controller = make_controller()
+    browser_session, _ = _make_browser_session_for_rollback()
+    result = ExploreResult(
+        pages=[
+            PageInfo(url="https://example.com/p1", title="P1"),
+            PageInfo(url="https://example.com/p2", title="P2"),
+            PageInfo(url="https://example.com/p3", title="P3"),
+        ]
+    )
+    snapshot = TurnSnapshot(turn_index=2, actions_before_count=1, pages_before_count=2, browser_history_index=2)
+
+    with patch("cliany_site.explorer.interactive.capture_axtree", new_callable=AsyncMock):
+        ok = await controller.handle_rollback(snapshot, result, browser_session)
+
+    assert ok is True
+    assert len(result.pages) == 2
+    assert [p.url for p in result.pages] == ["https://example.com/p1", "https://example.com/p2"]
+
+
+@pytest.mark.asyncio
+async def test_rollback_calls_recording_manager_mark_rolled_back():
+    controller = make_controller()
+    browser_session, _ = _make_browser_session_for_rollback()
+    result = ExploreResult(
+        actions=[ActionStep(action_type="click", page_url="https://example.com", description="step-1")],
+        pages=[PageInfo(url="https://example.com", title="Example")],
+    )
+    snapshot = TurnSnapshot(turn_index=7, actions_before_count=1, pages_before_count=1, browser_history_index=7)
+
+    recording_manager = MagicMock()
+    manifest = MagicMock()
+
+    with patch("cliany_site.explorer.interactive.capture_axtree", new_callable=AsyncMock):
+        ok = await controller.handle_rollback(
+            snapshot,
+            result,
+            browser_session,
+            recording_manager=recording_manager,
+            recording_manifest=manifest,
+        )
+
+    assert ok is True
+    recording_manager.mark_rolled_back.assert_called_once_with(manifest, 7)
