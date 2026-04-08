@@ -54,6 +54,7 @@ def render_command_block(
     decorator_lines = [
         f'@cli.command("{command_name}")',
         '@click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")',
+        '@click.option("--resume", is_flag=True, default=False, help="从最近断点继续执行")',
         '@click.option("--retry", is_flag=True, default=False, help="执行失败时提示重新 explore")',
         "@click.pass_context",
         *arg_decorators,
@@ -67,6 +68,7 @@ def render_command_block(
     function_args = [
         "ctx: click.Context",
         "json_mode: bool | None",
+        "resume: bool",
         "retry: bool",
         *arg_parameters,
     ]
@@ -84,7 +86,19 @@ def render_command_block(
     )
 
     if has_extract:
-        success_line = f'            return success_response({{"status": "completed", "command": "{command_name}", "args": {args_payload}, "results": _extraction_results}})'
+        success_payload_entries = (
+            f'"status": "completed", "command": "{command_name}", '
+            f'"args": {args_payload}, "results": _extraction_results'
+        )
+        execute_call = (
+            "            await execute_action_steps(\n"
+            "                browser_session,\n"
+            "                action_steps,\n"
+            "                continue_on_error=True,\n"
+            "                start_index=start_index,\n"
+            "                extraction_results=_extraction_results,\n"
+            "            )"
+        )
         writer_call = (
             "            from cliany_site.extract_writer import save_extract_markdown\n"
             "            from pathlib import Path as _Path\n"
@@ -98,13 +112,23 @@ def render_command_block(
             '                click.echo(f"\\U0001f4c4 提取结果已保存: {_saved}", err=True)'
         )
     else:
-        success_line = f'            return success_response({{"status": "completed", "command": "{command_name}", "args": {args_payload}}})'
+        success_payload_entries = f'"status": "completed", "command": "{command_name}", "args": {args_payload}'
+        execute_call = (
+            "            await execute_action_steps(\n"
+            "                browser_session,\n"
+            "                action_steps,\n"
+            "                continue_on_error=True,\n"
+            "                start_index=start_index,\n"
+            "            )"
+        )
         writer_call = ""
 
     return f'''{decorators_text}
 def {function_name}({function_signature}):
     """{description}"""
     async def _run():
+        from cliany_site.checkpoint import load_checkpoint
+
         cdp = cdp_from_context(ctx)
         if not await cdp.check_available():
             return error_response(CDP_UNAVAILABLE, "Chrome CDP 不可用", "启动 Chrome 并开启 --remote-debugging-port=9222")
@@ -116,10 +140,23 @@ def {function_name}({function_signature}):
             if session_data.get("expires_hint") == "expired":
                 return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
             await browser_session._cdp_set_cookies(session_data.get("cookies", []))
+        start_index = 0
+        resume_message = None
+        if resume:
+            checkpoint = load_checkpoint(DOMAIN, {command_name!r})
+            if not checkpoint:
+                return error_response(EXECUTION_FAILED, "未找到可恢复断点", "请先执行一次失败流程后再使用 --resume")
+            completed_indices = checkpoint.get("completed_indices", [])
+            if isinstance(completed_indices, list) and completed_indices:
+                numeric_indices = [idx for idx in completed_indices if isinstance(idx, int)]
+                if numeric_indices:
+                    start_index = max(numeric_indices) + 1
+            resume_message = f"从第 {{start_index + 1}} 步继续执行"
         try:
 {execution_blocks}
+{execute_call}
 {writer_call}
-{success_line}
+            return success_response({{{success_payload_entries}, "resume": resume, "start_index": start_index, "resume_message": resume_message}})
         except Exception as e:
             fix_hint = ""
             if hasattr(e, "to_dict"):
@@ -138,11 +175,14 @@ def {function_name}({function_signature}):
 def render_empty_command_block() -> str:
     return '''@cli.command("run-workflow")
 @click.option("--json", "json_mode", is_flag=True, default=None, help="JSON 输出")
+@click.option("--resume", is_flag=True, default=False, help="从最近断点继续执行")
 @click.option("--retry", is_flag=True, default=False, help="执行失败时提示重新 explore")
 @click.pass_context
-def run_workflow(ctx: click.Context, json_mode: bool | None, retry: bool):
+def run_workflow(ctx: click.Context, json_mode: bool | None, resume: bool, retry: bool):
     """执行默认工作流"""
     async def _run():
+        from cliany_site.checkpoint import load_checkpoint
+
         cdp = cdp_from_context(ctx)
         if not await cdp.check_available():
             return error_response(CDP_UNAVAILABLE, "Chrome CDP 不可用", "启动 Chrome 并开启 --remote-debugging-port=9222")
@@ -154,11 +194,23 @@ def run_workflow(ctx: click.Context, json_mode: bool | None, retry: bool):
             if session_data.get("expires_hint") == "expired":
                 return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
             await browser_session._cdp_set_cookies(session_data.get("cookies", []))
+        start_index = 0
+        resume_message = None
+        if resume:
+            checkpoint = load_checkpoint(DOMAIN, "run-workflow")
+            if not checkpoint:
+                return error_response(EXECUTION_FAILED, "未找到可恢复断点", "请先执行一次失败流程后再使用 --resume")
+            completed_indices = checkpoint.get("completed_indices", [])
+            if isinstance(completed_indices, list) and completed_indices:
+                numeric_indices = [idx for idx in completed_indices if isinstance(idx, int)]
+                if numeric_indices:
+                    start_index = max(numeric_indices) + 1
+            resume_message = f"从第 {start_index + 1} 步继续执行"
         try:
             action_steps = []
             # - 无操作步骤
-            await execute_action_steps(browser_session, action_steps, continue_on_error=True)
-            return success_response({"status": "completed", "command": "run-workflow"})
+            await execute_action_steps(browser_session, action_steps, continue_on_error=True, start_index=start_index)
+            return success_response({"status": "completed", "command": "run-workflow", "resume": resume, "start_index": start_index, "resume_message": resume_message})
         except Exception as e:
             fix_hint = ""
             if hasattr(e, "to_dict"):
@@ -182,7 +234,7 @@ def render_execution_blocks(
     param_overrides: dict[int, str] | None = None,
 ) -> str:
     if not action_steps:
-        return "            action_steps = []\n            await execute_action_steps(browser_session, action_steps, continue_on_error=True)"
+        return "            action_steps = []"
 
     has_extract = any(
         isinstance(raw_step, int)
@@ -212,9 +264,9 @@ def render_execution_blocks(
         groups.append(("inline", inline_group))
 
     if not groups:
-        return "            action_steps = []\n            await execute_action_steps(browser_session, action_steps, continue_on_error=True)"
+        return "            action_steps = []"
 
-    block_lines: list[str] = []
+    block_lines: list[str] = ["            action_steps = []"]
     var_counter = [0]
 
     if has_extract:
@@ -232,14 +284,7 @@ def render_execution_blocks(
             if arg_parameters and raw_args:
                 sub_code = render_substitute_params_code(raw_args, arg_parameters)
                 block_lines.append(f"            {var_name} = substitute_parameters({var_name}, {sub_code})")
-            if has_extract:
-                block_lines.append(
-                    f"            await execute_action_steps(browser_session, {var_name}, continue_on_error=True, extraction_results=_extraction_results)"
-                )
-            else:
-                block_lines.append(
-                    f"            await execute_action_steps(browser_session, {var_name}, continue_on_error=True)"
-                )
+            block_lines.append(f"            action_steps.extend({var_name})")
         else:
             atom_action: ActionStep = group_data
             atom_id = atom_action.target_ref
@@ -257,14 +302,7 @@ def render_execution_blocks(
             block_lines.append(
                 f"                _atom_actions = substitute_parameters(_normalize_atom_actions({atom_var}.actions), {params_code})"
             )
-            if has_extract:
-                block_lines.append(
-                    "                await execute_action_steps(browser_session, _atom_actions, continue_on_error=True, extraction_results=_extraction_results)"
-                )
-            else:
-                block_lines.append(
-                    "                await execute_action_steps(browser_session, _atom_actions, continue_on_error=True)"
-                )
+            block_lines.append("                action_steps.extend(_atom_actions)")
 
     return "\n".join(block_lines)
 

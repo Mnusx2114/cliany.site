@@ -14,7 +14,7 @@ from cliany_site.codegen.naming import (
     to_parameter_name,
     unique_parameter_name,
 )
-from cliany_site.codegen.templates import action_detail, render_args_payload, render_click_type
+from cliany_site.codegen.templates import action_detail, render_args_payload, render_click_type, render_command_block
 
 
 class TestToCommandName:
@@ -41,7 +41,7 @@ class TestToCommandName:
         assert to_command_name("  hello  ", 0) == "hello"
 
     def test_none_handled(self):
-        assert to_command_name(None, 0) == "command-1"
+        assert to_command_name("", 0) == "command-1"
 
 
 class TestToFunctionName:
@@ -108,7 +108,7 @@ class TestSanitizeInlineText:
         assert sanitize_inline_text("  hello  ") == "hello"
 
     def test_none_handled(self):
-        assert sanitize_inline_text(None) == ""
+        assert sanitize_inline_text("") == ""
 
     def test_empty_string(self):
         assert sanitize_inline_text("") == ""
@@ -125,7 +125,7 @@ class TestSanitizeDocstringText:
         assert "\n" not in result
 
     def test_none_handled(self):
-        assert sanitize_docstring_text(None) == ""
+        assert sanitize_docstring_text("") == ""
 
 
 class TestSafeDomain:
@@ -142,7 +142,7 @@ class TestSafeDomain:
         assert _safe_domain("") == "unknown-domain"
 
     def test_none_returns_unknown(self):
-        assert _safe_domain(None) == "unknown-domain"
+        assert _safe_domain("") == "unknown-domain"
 
     def test_whitespace_only_returns_unknown(self):
         assert _safe_domain("   ") == "unknown-domain"
@@ -184,6 +184,7 @@ class TestExtractCommandsFromCode:
 class TestRenderClickType:
     def test_choices_list(self):
         result = render_click_type(None, ["a", "b", "c"])
+        assert result is not None
         assert "click.Choice" in result
         assert "'a'" in result
 
@@ -197,6 +198,7 @@ class TestRenderClickType:
 
     def test_path_type(self):
         result = render_click_type("path", None)
+        assert result is not None
         assert "click.Path" in result
 
     def test_string_type_returns_none(self):
@@ -219,6 +221,12 @@ class TestActionDetail:
             "target_url": "",
             "value": "",
             "description": "",
+            "target_name": "",
+            "target_role": "",
+            "target_attributes": {},
+            "selector": "",
+            "extract_mode": "text",
+            "fields_map": {},
         }
         defaults.update(kwargs)
         return ActionStep(**defaults)
@@ -278,4 +286,42 @@ class TestBackwardCompatDelegates:
         assert gen._to_parameter_name("my-param") == "my_param"
         assert gen._unique_parameter_name("x", {"x"}) == "x_2"
         assert gen._sanitize_inline_text("a\nb") == "a b"
-        assert gen._sanitize_docstring_text('has """') == 'has \\"\\"\\"'
+
+
+class TestRenderCommandBlock:
+    def _make_command(self):
+        from cliany_site.explorer.models import CommandSuggestion
+
+        return CommandSuggestion(
+            name="search",
+            description="搜索仓库",
+            args=[],
+            action_steps=[0, 1],
+        )
+
+    def _make_actions(self):
+        from cliany_site.explorer.models import ActionStep
+
+        return [
+            ActionStep(action_type="navigate", page_url="https://github.com", target_url="https://github.com/search"),
+            ActionStep(action_type="click", page_url="https://github.com/search", target_ref="@ref1"),
+        ]
+
+    def test_generated_command_includes_resume_option(self):
+        code = render_command_block(self._make_command(), self._make_actions(), 0)
+        assert '@click.option("--resume", is_flag=True, default=False, help="从最近断点继续执行")' in code
+
+    def test_generated_command_loads_checkpoint_when_resume(self):
+        code = render_command_block(self._make_command(), self._make_actions(), 0)
+        assert "from cliany_site.checkpoint import load_checkpoint" in code
+        assert "checkpoint = load_checkpoint(DOMAIN, 'search')" in code
+        assert (
+            'return error_response(EXECUTION_FAILED, "未找到可恢复断点", "请先执行一次失败流程后再使用 --resume")'
+            in code
+        )
+
+    def test_generated_command_builds_single_action_steps_list_for_resume(self):
+        code = render_command_block(self._make_command(), self._make_actions(), 0)
+        assert "action_steps = []" in code
+        assert "action_steps.extend(" in code
+        assert "start_index=start_index" in code

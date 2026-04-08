@@ -4,6 +4,7 @@
 """
 
 import json
+from importlib.metadata import version
 
 from click.testing import CliRunner
 
@@ -17,7 +18,7 @@ class TestRootCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.7.0" in result.output
+        assert version("cliany-site") in result.output
 
     def test_help_output(self):
         runner = CliRunner()

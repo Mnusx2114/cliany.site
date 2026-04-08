@@ -112,3 +112,27 @@ class TestCheckpointOverwrite:
         result = load_checkpoint("d.com", "")
         assert result is not None
         assert result["completed_indices"] == [0]
+
+
+class TestResumeStartIndex:
+    def test_resume_start_index_from_completed_indices(self, _use_tmp_home, tmp_path):
+        actions = [{"type": "click"}] * 5
+        save_checkpoint("example.com", "search", actions, [0, 1, 3])
+        checkpoint = load_checkpoint("example.com", "search")
+        assert checkpoint is not None
+
+        completed_indices = checkpoint.get("completed_indices", [])
+        numeric_indices = [idx for idx in completed_indices if isinstance(idx, int)]
+        start_index = max(numeric_indices) + 1 if numeric_indices else 0
+        assert start_index == 4
+
+    def test_resume_start_index_empty_completed_indices_defaults_zero(self, _use_tmp_home, tmp_path):
+        actions = [{"type": "click"}] * 3
+        save_checkpoint("example.com", "search", actions, [])
+        checkpoint = load_checkpoint("example.com", "search")
+        assert checkpoint is not None
+
+        completed_indices = checkpoint.get("completed_indices", [])
+        numeric_indices = [idx for idx in completed_indices if isinstance(idx, int)]
+        start_index = max(numeric_indices) + 1 if numeric_indices else 0
+        assert start_index == 0
