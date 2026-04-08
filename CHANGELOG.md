@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-04-08
+
+### 新增
+- **adapter 命令级断点恢复**：为生成的站点命令补齐 `--resume`，可通过 `cliany-site <domain> <command> --resume` 从最近断点继续执行
+
+### 变更
+- 生成命令会先汇总完整动作序列，再统一传入执行引擎，避免断点恢复时出现分段索引错位
+- README 中的断点续执行说明已对齐到真实 CLI 入口
+
+### 修复
+- 修复 `explorer` 包级导出导致的循环导入问题，避免 codegen 相关测试在收集阶段失败
+- 修复 CLI 版本测试对旧版本号的硬编码断言，改为读取包元数据
+
+### 文档
+- 添加 `--resume` 闭环设计与实现计划文档
+- 添加规划差距评审与规划项对账文档
+
 ## [0.8.1] - 2026-04-03
 
 ### 新增
@@ -92,7 +109,9 @@
 - 修复合并周期保留 selector/extract_mode/fields_map 的问题
 - 修正 QA 测试断言与实际 API 对齐
 
-[Unreleased]: https://github.com/pearjelly/cliany.site/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/pearjelly/cliany.site/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/pearjelly/cliany.site/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/pearjelly/cliany.site/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/pearjelly/cliany.site/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/pearjelly/cliany.site/compare/v0.7.0...v0.7.1
 [0.6.2]: https://github.com/pearjelly/cliany.site/compare/v0.6.1...v0.6.2
