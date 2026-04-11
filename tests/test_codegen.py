@@ -325,3 +325,18 @@ class TestRenderCommandBlock:
         assert "action_steps = []" in code
         assert "action_steps.extend(" in code
         assert "start_index=start_index" in code
+
+    def test_generated_command_reads_root_sandbox_flag(self):
+        code = render_command_block(self._make_command(), self._make_actions(), 0)
+        assert "root_ctx = ctx.find_root()" in code
+        assert 'sandbox_enabled = root_obj.get("sandbox", False)' in code
+
+    def test_generated_command_validates_actions_when_sandbox_enabled(self):
+        code = render_command_block(self._make_command(), self._make_actions(), 0)
+        assert "from cliany_site.sandbox import SandboxPolicy, validate_action_steps" in code
+        assert "policy = SandboxPolicy.from_domain(DOMAIN)" in code
+        assert "violations = validate_action_steps(action_steps, policy)" in code
+
+    def test_generated_command_returns_sandbox_error_message(self):
+        code = render_command_block(self._make_command(), self._make_actions(), 0)
+        assert "沙箱阻止执行" in code

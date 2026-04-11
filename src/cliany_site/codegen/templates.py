@@ -128,6 +128,7 @@ def {function_name}({function_signature}):
     """{description}"""
     async def _run():
         from cliany_site.checkpoint import load_checkpoint
+        from cliany_site.sandbox import SandboxPolicy, validate_action_steps
 
         cdp = cdp_from_context(ctx)
         if not await cdp.check_available():
@@ -140,6 +141,9 @@ def {function_name}({function_signature}):
             if session_data.get("expires_hint") == "expired":
                 return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
             await browser_session._cdp_set_cookies(session_data.get("cookies", []))
+        root_ctx = ctx.find_root()
+        root_obj = root_ctx.obj if isinstance(root_ctx.obj, dict) else {{}}
+        sandbox_enabled = root_obj.get("sandbox", False)
         start_index = 0
         resume_message = None
         if resume:
@@ -154,6 +158,16 @@ def {function_name}({function_signature}):
             resume_message = f"从第 {{start_index + 1}} 步继续执行"
         try:
 {execution_blocks}
+            if sandbox_enabled:
+                policy = SandboxPolicy.from_domain(DOMAIN)
+                violations = validate_action_steps(action_steps, policy)
+                if violations:
+                    first = violations[0]
+                    return error_response(
+                        EXECUTION_FAILED,
+                        f"沙箱阻止执行: 第 {{first['index']}} 步 {{first['action'] or 'unknown'}}",
+                        first.get("error") or "关闭 --sandbox 或重新 explore 以调整动作路径",
+                    )
 {execute_call}
 {writer_call}
             return success_response({{{success_payload_entries}, "resume": resume, "start_index": start_index, "resume_message": resume_message}})
@@ -182,6 +196,7 @@ def run_workflow(ctx: click.Context, json_mode: bool | None, resume: bool, retry
     """执行默认工作流"""
     async def _run():
         from cliany_site.checkpoint import load_checkpoint
+        from cliany_site.sandbox import SandboxPolicy, validate_action_steps
 
         cdp = cdp_from_context(ctx)
         if not await cdp.check_available():
@@ -194,6 +209,9 @@ def run_workflow(ctx: click.Context, json_mode: bool | None, resume: bool, retry
             if session_data.get("expires_hint") == "expired":
                 return error_response(SESSION_EXPIRED, "Session 已失效", "请重新登录后再执行命令")
             await browser_session._cdp_set_cookies(session_data.get("cookies", []))
+        root_ctx = ctx.find_root()
+        root_obj = root_ctx.obj if isinstance(root_ctx.obj, dict) else {}
+        sandbox_enabled = root_obj.get("sandbox", False)
         start_index = 0
         resume_message = None
         if resume:
@@ -209,6 +227,16 @@ def run_workflow(ctx: click.Context, json_mode: bool | None, resume: bool, retry
         try:
             action_steps = []
             # - 无操作步骤
+            if sandbox_enabled:
+                policy = SandboxPolicy.from_domain(DOMAIN)
+                violations = validate_action_steps(action_steps, policy)
+                if violations:
+                    first = violations[0]
+                    return error_response(
+                        EXECUTION_FAILED,
+                        f"沙箱阻止执行: 第 {first['index']} 步 {first['action'] or 'unknown'}",
+                        first.get("error") or "关闭 --sandbox 或重新 explore 以调整动作路径",
+                    )
             await execute_action_steps(browser_session, action_steps, continue_on_error=True, start_index=start_index)
             return success_response({"status": "completed", "command": "run-workflow", "resume": resume, "start_index": start_index, "resume_message": resume_message})
         except Exception as e:
