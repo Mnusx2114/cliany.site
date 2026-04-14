@@ -72,5 +72,5 @@ class RecordingManifest:
     url: str
     workflow: str
     started_at: str
-    steps: list = field(default_factory=list)
+    steps: list[StepRecord] = field(default_factory=list)
     completed: bool = False

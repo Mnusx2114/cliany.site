@@ -1,8 +1,10 @@
 import dataclasses
 import json
 import tempfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from cliany_site.explorer.models import RecordingManifest, StepRecord
 
@@ -107,7 +109,10 @@ class RecordingManager:
         path = Path(step.axtree_snapshot_path)
         if not path.exists():
             raise FileNotFoundError(f"AXTree 文件不存在: {path}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            raise TypeError(f"AXTree 快照不是对象: {path}")
+        return dict(loaded)
 
     def _find_step(self, manifest: RecordingManifest, step_index: int) -> StepRecord:
         for step in manifest.steps:
@@ -122,9 +127,21 @@ class RecordingManager:
         self._write_text_atomic(manifest_file, json.dumps(data, ensure_ascii=False, indent=2))
 
     def _read_manifest(self, manifest_file: Path) -> RecordingManifest:
-        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        raw_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        if not isinstance(raw_data, dict):
+            raise TypeError(f"manifest 格式错误: {manifest_file}")
+
+        data: dict[str, Any] = dict(raw_data)
         raw_steps = data.pop("steps", [])
-        steps = [StepRecord(**s) for s in raw_steps]
+        if not isinstance(raw_steps, list):
+            raise TypeError(f"manifest steps 格式错误: {manifest_file}")
+
+        steps: list[StepRecord] = []
+        for raw_step in raw_steps:
+            if not isinstance(raw_step, Mapping):
+                raise TypeError(f"step 记录格式错误: {manifest_file}")
+            steps.append(StepRecord(**dict(raw_step)))
+
         manifest = RecordingManifest(**data)
         manifest.steps = steps
         return manifest

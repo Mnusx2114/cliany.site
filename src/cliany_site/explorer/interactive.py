@@ -115,10 +115,7 @@ class InteractiveController:
 
     @staticmethod
     def _extract_history_entry_id(entry: Any) -> int | None:
-        if isinstance(entry, dict):
-            entry_id = entry.get("id")
-        else:
-            entry_id = getattr(entry, "id", None)
+        entry_id = entry.get("id") if isinstance(entry, dict) else getattr(entry, "id", None)
         return entry_id if isinstance(entry_id, int) else None
 
     async def _try_browser_back(self, browser_session: Any, fallback_url: str) -> None:
@@ -172,8 +169,8 @@ class InteractiveController:
 
     async def handle_rollback(
         self,
-        snapshot: "TurnSnapshot",
-        result: "ExploreResult",
+        snapshot: TurnSnapshot,
+        result: ExploreResult,
         browser_session,
         recording_manager=None,
         recording_manifest=None,

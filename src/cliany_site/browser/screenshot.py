@@ -62,6 +62,7 @@ def annotate_screenshot_with_som(
     img = Image.open(BytesIO(screenshot_data))
     draw = ImageDraw.Draw(img, "RGBA")
 
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     try:
         font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", 12)
     except OSError:
@@ -120,8 +121,8 @@ def annotate_screenshot_with_som(
     if format == "png":
         img.save(output, format="PNG")
     else:
-        img = img.convert("RGB")
-        img.save(output, format="JPEG", quality=quality)
+        converted_img = img.convert("RGB")
+        converted_img.save(output, format="JPEG", quality=quality)
 
     annotated_data = output.getvalue()
     logger.debug("SoM 标注完成: %d 个元素, 输出 %d bytes", label_idx, len(annotated_data))

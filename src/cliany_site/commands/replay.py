@@ -1,4 +1,3 @@
-import json
 import time
 
 import click
@@ -16,28 +15,27 @@ def _display_step(console: Console, step: StepRecord, step_num: int, total: int)
     status_text = "[bold red]⚠ 已回退[/bold red]" if step.rolled_back else "[bold green]正常[/bold green]"
 
     lines = Text()
-    lines.append(f"动作类型: ", style="dim")
+    lines.append("动作类型: ", style="dim")
     lines.append(f"{action_type}\n", style="cyan")
-    lines.append(f"描述: ", style="dim")
+    lines.append("描述: ", style="dim")
     lines.append(f"{description}\n", style="white")
-    lines.append(f"状态: ", style="dim")
+    lines.append("状态: ", style="dim")
     lines.append_text(Text.from_markup(status_text))
     lines.append("\n")
-    lines.append(f"时间: ", style="dim")
+    lines.append("时间: ", style="dim")
     lines.append(f"{step.timestamp}\n", style="dim")
 
     if step.screenshot_path:
-        lines.append(f"截图: ", style="dim")
+        lines.append("截图: ", style="dim")
         lines.append(f"{step.screenshot_path}\n", style="blue")
 
     if step.axtree_snapshot_path:
         try:
-            import json as _json
             from pathlib import Path
 
             axtree_raw = Path(step.axtree_snapshot_path).read_text(encoding="utf-8")
             axtree_preview = axtree_raw[:500]
-            lines.append(f"AXTree 摘要:\n", style="dim")
+            lines.append("AXTree 摘要:\n", style="dim")
             lines.append(f"{axtree_preview}\n", style="dim")
         except OSError:
             lines.append(f"AXTree: {step.axtree_snapshot_path}\n", style="dim")
@@ -99,9 +97,9 @@ def replay(ctx: click.Context, domain: str, session_id: str | None, step_mode: b
                 if chosen_idx < 0 or chosen_idx >= len(recordings):
                     raise ValueError
                 manifest = recordings[chosen_idx]
-            except (ValueError, IndexError):
+            except (ValueError, IndexError) as err:
                 console.print(f"[red]无效选择: {choice}[/red]")
-                raise SystemExit(1)
+                raise SystemExit(1) from err
 
     steps = manifest.steps
     total = len(steps)

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC
 from typing import Any, cast
 from urllib.parse import urljoin, urlparse
@@ -313,7 +314,10 @@ async def _attempt_vision_locate(
     )
 
     try:
-        response = await llm.ainvoke([message])
+        ainvoke = getattr(llm, "ainvoke", None)
+        if not callable(ainvoke):
+            return None
+        response = await cast(Callable[[list[Any]], Awaitable[Any]], ainvoke)([message])
         response_text = str(getattr(response, "content", response))
         parsed = parse_vision_locate_response(response_text)
     except (RuntimeError, OSError, TypeError, ValueError) as exc:
@@ -701,6 +705,7 @@ async def execute_action_steps(
                     if not selector:
                         logger.warning("extract 动作缺少 selector，跳过")
                     else:
+                        data: dict[str, str] | list[Any] | Any
                         try:
                             js_expr = build_extract_js(selector, extract_mode, fields if fields else None)
                             page = await browser_session.get_current_page()
@@ -718,9 +723,9 @@ async def execute_action_steps(
                                 if extract_mode == "text":
                                     data = {"text": ""}
                                 elif extract_mode == "attribute":
-                                    data = {}
+                                    data = cast(dict[str, str], {})
                                 else:
-                                    data = []
+                                    data = cast(list[Any], [])
                             else:
                                 data = _coerce_json_like_extract_data(raw_result)
 
